@@ -1,0 +1,15 @@
+{
+  "name": "@projection-witness/repair",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@projection-witness/database": "0.0.0",
+    "@projection-witness/evidence": "0.0.0",
+    "pg": "8.23.0",
+    "zod": "4.4.3"
+  }
+}

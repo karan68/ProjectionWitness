@@ -441,6 +441,7 @@ The repository commits `.env.example`, never `.env`.
 | `DATABASE_URL_PROJECTOR` | Projector | Yes | Projection worker role connection |
 | `DATABASE_URL_MCP_READ` | Read MCP | Yes | Bounded evidence reads |
 | `DATABASE_URL_MCP_WRITE` | Write MCP | Yes | Fenced repair transaction |
+| `DATABASE_URL_REPAIR_EXECUTOR` | Internal repair service | Yes | Non-agent-facing fenced apply transaction |
 | `API_BASE_URL` | MCP/demo | No | Public verification endpoint |
 | `API_PORT` | API | No | Defaults to `3000` |
 | `MCP_READ_PORT` | MCP | No | Defaults to `8781` |
@@ -705,7 +706,8 @@ Use distinct login roles in local integration and demo environments. The migrati
 | `pw_api` | Select/insert events; select/insert/update stream heads; read order view/runtime public metadata | Event update/delete; projection repair; audit mutation |
 | `pw_projector` | Select events/heads; update checkpoint/gaps/view/runtime registration | Event mutation; repair-plan/audit mutation |
 | `pw_mcp_read` | Select bounded views, events, heads, runtime, plans, audit | All update/insert/delete operations |
-| `pw_mcp_write` | Select/lock required rows; insert plans/audit; typed order-view update; allowed plan completion | Event mutation; schema DDL; unrelated tables; arbitrary SQL endpoint |
+| `pw_mcp_write` | Read bounded evidence; insert immutable prepared plans | Runtime/stream/projection mutation; audit insert; plan completion; arbitrary SQL endpoint |
+| `pw_repair_executor` | Internal-only plan/runtime/stream/row locks; audit insert; typed projection-field CAS; plan completion | Agent-facing connection; event mutation; order ID update; arbitrary SQL endpoint |
 
 `pw_mcp_write` SHOULD eventually receive `EXECUTE` on a constrained database routine instead of direct table grants. For the hackathon, a Node-owned transaction is acceptable only if integration tests prove the same privilege boundary and exact fixed statements.
 

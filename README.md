@@ -85,6 +85,17 @@ claimed as complete.
 See [docs/EVIDENCE.md](docs/EVIDENCE.md) for the trust boundary, known hashes, executable commands,
 and persisted TrueForge attempt status.
 
+## Transactional repair
+
+The repair package now stages immutable evidence plans and atomically applies one projection-row
+CAS with an append-only audit receipt and plan completion. Runtime, stream, row, candidate, expiry,
+and approval fields are rechecked under a fixed lock order. Stale, expired, no-op, lock-timeout, and
+injected audit-failure paths leave repair state unchanged.
+
+See [docs/TRANSACTIONAL_REPAIR.md](docs/TRANSACTIONAL_REPAIR.md) for the lock order, role boundary,
+stable outcomes, and PostgreSQL evidence. MCP tools and TrueForge approval wiring remain separate
+follow-up work.
+
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
 open during development:

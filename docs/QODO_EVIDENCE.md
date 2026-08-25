@@ -20,6 +20,8 @@ configuration alone are not represented as review evidence.
 | [1](https://github.com/karan68/ProjectionWitness/pull/1) | Foundation, toolchain, CI, and versions | Two valid findings on `d28215d`; both resolved on `9a6e0c5` with zero new findings | Accepted and fixed |
 | [2](https://github.com/karan68/ProjectionWitness/pull/2) | Typed order domain, reducer, migration, and expected-version event store | Three valid findings on `ab7efd6`; all resolved on `cc3cfcf` with zero new findings | Accepted and fixed |
 | [3](https://github.com/karan68/ProjectionWitness/pull/3) | Naive projector, API read, deterministic gap reproducer, and reliability gate | Eight findings on `efabb2a`; corrections committed in `27b979c` | Accepted and fixed; final persistent review remains visible on the PR |
+| [4](https://github.com/karan68/ProjectionWitness/pull/4) | Gap-aware projector and runtime attestation | Multiple exact-head rounds found bigint bounds, path validation, publication races, source disclosure, execution bounds, and determinism gaps | Accepted and fixed through reviewed head `8451e23`; merged as `d6bb9cc` |
+| [5](https://github.com/karan68/ProjectionWitness/pull/5) | Canonical evidence and reducer provenance | Review found artifact TOCTOU, unbounded execution/text, forgeable tool output, unbound provenance, pagination, and fresh-module replay gaps | Accepted and fixed through reviewed head `6e145f1`; merged as `0373a2f` |
 
 ### PR 1 findings
 
@@ -52,6 +54,20 @@ routes, event-table truncation, negative money parsing, accidental workspace sel
 unbounded commit-gate failure, public internal-error leakage, and incomplete standalone proof
 verification. Commit `27b979c` fixes each with focused regressions. The same correction also fixed
 numeric projector ordering across bigint digit boundaries, which the ten-run race gate exposed.
+
+### PR 4 and PR 5 findings
+
+The repeated deep reviews materially changed the design. Reducer artifacts are now immutable,
+content-addressed, size-bounded CommonJS files. Projector and evidence execution accept only the
+digest compiled into the projector build, run in killable workers with cleared environments, and
+compare fresh module executions. TrueForge evidence verification consumes every persisted page,
+requires one exact linked `exec` call, bounds all text before parsing, and validates the complete
+fixture result rather than matching substrings. Plan envelopes can consume only opaque evidence
+returned by the verified artifact runner.
+
+The final PR 5 summary carried an `Artifact size check races` item after the code had moved to one
+`O_NOFOLLOW` file handle with pre-read `fstat` and a post-read byte-length check. Exact-head CI was
+green and no current inline thread remained; this was treated as an evidence-backed disagreement.
 
 For every PR, record the URL, reviewed commit, findings, fixes, and evidence-backed disagreements
 before merge.

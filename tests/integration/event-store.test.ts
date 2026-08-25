@@ -23,6 +23,7 @@ const runtimeUrls: RuntimeRoleUrls = {
   pw_projector: environmentVariable("DATABASE_URL_PROJECTOR") ?? "",
   pw_mcp_read: environmentVariable("DATABASE_URL_MCP_READ") ?? "",
   pw_mcp_write: environmentVariable("DATABASE_URL_MCP_WRITE") ?? "",
+  pw_repair_executor: environmentVariable("DATABASE_URL_REPAIR_EXECUTOR") ?? "",
 };
 const databaseUrls = [databaseUrl, ...Object.values(runtimeUrls)];
 const describeWithDatabase = databaseUrls.some((url) => url === "") ? describe.skip : describe;
@@ -312,12 +313,13 @@ describeWithDatabase("PostgreSQL order event store", () => {
          has_table_privilege(role_name, 'events', 'INSERT') AS can_insert_events
        FROM unnest($1::text[]) AS role_name
        ORDER BY role_name`,
-      [["pw_mcp_read", "pw_mcp_write", "pw_projector"]],
+      [["pw_mcp_read", "pw_mcp_write", "pw_projector", "pw_repair_executor"]],
     );
     expect(privileges.rows).toEqual([
       { role_name: "pw_mcp_read", can_read_events: true, can_insert_events: false },
       { role_name: "pw_mcp_write", can_read_events: true, can_insert_events: false },
       { role_name: "pw_projector", can_read_events: true, can_insert_events: false },
+      { role_name: "pw_repair_executor", can_read_events: true, can_insert_events: false },
     ]);
   });
 
