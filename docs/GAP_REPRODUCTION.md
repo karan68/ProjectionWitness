@@ -88,5 +88,7 @@ event/projection table is empty and the sequence has never been called.
 - Projector v1 is intentionally unsafe and must not remain active before repair is enabled.
 - The current API surface proves the customer-visible read only; domain-write endpoints follow in
   the API workflow PR.
-- Gap-aware v2, runtime attestation, MCP evidence, Daytona reducer proof, and repair are not part of
-  this PR.
+- Gap-aware v2 and runtime attestation are implemented separately and documented in
+  [GAP_AWARE_PROJECTOR.md](GAP_AWARE_PROJECTOR.md). They prevent future observed gaps but cannot
+  infer the historical v1 gap created by this reproduction.
+- MCP evidence, Daytona reducer proof, and repair are not part of this reproduction.
