@@ -12,6 +12,7 @@
     { "path": "./packages/repair" },
     { "path": "./apps/api" },
     { "path": "./apps/projector" },
+    { "path": "./apps/mcp" },
     { "path": "./apps/demo-driver" }
   ]
 }
