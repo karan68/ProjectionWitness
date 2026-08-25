@@ -17,9 +17,7 @@ export const SnapshotStreamInputSchema = z
   .strict();
 export const RuntimeInputSchema = z.object({ projectionName: ProjectionNameSchema }).strict();
 export const StageRepairInputSchema = z.object({ envelope: RepairEnvelopeSchema }).strict();
-export const VerifyRepairInputSchema = z
-  .object({ planId: z.uuid(), orderId: OrderIdSchema })
-  .strict();
+export const VerifyRepairInputSchema = z.object({ planId: z.uuid() }).strict();
 export const ApplyRepairInputSchema = ApplyProjectionRepairInputSchema;
 
 export const FindCaseOutputSchema = z

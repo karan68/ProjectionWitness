@@ -3,9 +3,9 @@ import type { ProjectionRepairService } from "@projection-witness/repair";
 import type { Pool } from "pg";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-function tools() {
+function tools(readPool: Pool = {} as Pool) {
   return new ProjectionWitnessTools({
-    readPool: {} as Pool,
+    readPool,
     repairService: {} as ProjectionRepairService,
     apiBaseUrl: "http://127.0.0.1:3000",
   });
@@ -62,5 +62,37 @@ describe("MCP public API boundary", () => {
       code: "VERIFICATION_FAILED",
       message: "Public API returned invalid JSON",
     });
+  });
+
+  it("uses the persisted plan stream for row and public verification", async () => {
+    const query = vi
+      .fn()
+      .mockResolvedValueOnce({ rows: [{ status: "APPLIED", stream_id: "ORD-A" }] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async (url: URL) =>
+          new Response(JSON.stringify({ orderId: url.pathname.split("/").at(-1) })),
+      ),
+    );
+    const planId = "018f47b2-7c6a-7ca4-b75a-4b748f41e001";
+
+    await expect(
+      tools({ query } as unknown as Pool).verifyProjectionRepair({ planId }),
+    ).resolves.toEqual({
+      planStatus: "APPLIED",
+      auditReceiptSha256: null,
+      rowMatchesAudit: null,
+      publicStatusCode: 200,
+    });
+    expect(query.mock.calls[2]?.[1]).toEqual(["ORD-A"]);
+    expect(fetch).toHaveBeenCalledWith(new URL("http://127.0.0.1:3000/orders/ORD-A"), {
+      signal: expect.any(AbortSignal),
+    });
+    await expect(
+      tools({ query } as unknown as Pool).verifyProjectionRepair({ planId, orderId: "ORD-B" }),
+    ).rejects.toThrow();
   });
 });

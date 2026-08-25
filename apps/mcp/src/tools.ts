@@ -294,12 +294,17 @@ export class ProjectionWitnessTools {
   }
 
   async verifyProjectionRepair(input: unknown) {
-    const { planId, orderId } = VerifyRepairInputSchema.parse(input);
-    const [plan, audit, row, publicState] = await Promise.all([
-      this.readPool.query<{ status: string }>(
-        "SELECT status FROM projection_repair_plans WHERE plan_id = $1",
-        [planId],
-      ),
+    const { planId } = VerifyRepairInputSchema.parse(input);
+    const plan = await this.readPool.query<{ status: string; stream_id: string }>(
+      "SELECT status, stream_id FROM projection_repair_plans WHERE plan_id = $1",
+      [planId],
+    );
+    const planRow = plan.rows[0];
+    if (planRow === undefined) {
+      throw new ToolFailure("CASE_NOT_FOUND", "Repair plan was not found");
+    }
+    const orderId = planRow.stream_id;
+    const [audit, row, publicState] = await Promise.all([
       this.readPool.query<{ receipt_sha256: string; after_row_sha256: string }>(
         `SELECT receipt_sha256, after_row_sha256
          FROM projection_repair_audit WHERE plan_id = $1`,
@@ -323,7 +328,7 @@ export class ProjectionWitnessTools {
         fingerprintCandidateProjection(business).sha256 === auditRow.after_row_sha256;
     }
     return VerifyOutputSchema.parse({
-      planStatus: plan.rows[0]?.status ?? null,
+      planStatus: planRow.status,
       auditReceiptSha256: auditRow?.receipt_sha256 ?? null,
       rowMatchesAudit,
       publicStatusCode: publicState.statusCode,

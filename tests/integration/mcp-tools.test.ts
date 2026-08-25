@@ -115,5 +115,9 @@ describeWithDatabase("MCP read tools", () => {
       streamExists: false,
       projectionExists: false,
     });
+    await expect(tools.verifyProjectionRepair({ planId: randomUUID() })).rejects.toMatchObject({
+      code: "CASE_NOT_FOUND",
+      message: "Repair plan was not found",
+    });
   });
 });

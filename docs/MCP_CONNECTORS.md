@@ -23,6 +23,10 @@ The write connector at `http://127.0.0.1:8782/mcp` publishes only
 non-destructive but persists an immutable prepared plan after authoritative evidence
 revalidation.
 
+`verify_projection_repair` accepts only a plan ID. It resolves the authoritative order ID from
+the persisted plan and uses that same ID for the projection row and public API reads, so a caller
+cannot combine plan/audit evidence for one order with verification state from another.
+
 ## Database Identities
 
 The process requires three independent database URLs:
