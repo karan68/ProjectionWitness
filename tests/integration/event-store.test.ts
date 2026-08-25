@@ -34,6 +34,17 @@ function postgresErrorCode(error: unknown): string | undefined {
   return typeof error.code === "string" ? error.code : undefined;
 }
 
+function deferred(): { promise: Promise<void>; resolve: () => void } {
+  let resolvePromise: (() => void) | undefined;
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = resolve;
+  });
+  if (resolvePromise === undefined) {
+    throw new Error("Deferred promise resolver was not initialized");
+  }
+  return { promise, resolve: resolvePromise };
+}
+
 describeWithDatabase("PostgreSQL order event store", () => {
   let migratorPool: Pool;
   let apiPool: Pool;
@@ -349,6 +360,49 @@ describeWithDatabase("PostgreSQL order event store", () => {
     });
     expect(afterRollback.globalPosition).toBe("3");
     expect(await eventStore.loadStream("ORD-HOLE-2")).toEqual([]);
+  });
+
+  it("can deterministically hold position N uncommitted while N+1 commits", async () => {
+    const gateReached = deferred();
+    const releaseCommit = deferred();
+    let pendingPosition: string | undefined;
+    const gatedStore = new OrderEventStore(apiPool, {
+      beforeCommit: async (event) => {
+        pendingPosition = event.globalPosition;
+        gateReached.resolve();
+        await releaseCommit.promise;
+      },
+    });
+
+    const pendingAppend = gatedStore.append({
+      streamId: "ORD-GATED-A",
+      expectedVersion: 0,
+      event: { type: "OrderPlaced", totalCents: 100 },
+    });
+    try {
+      await gateReached.promise;
+
+      const committedLaterPosition = await eventStore.append({
+        streamId: "ORD-GATED-B",
+        expectedVersion: 0,
+        event: { type: "OrderPlaced", totalCents: 200 },
+      });
+
+      expect(pendingPosition).toBeDefined();
+      expect(BigInt(pendingPosition ?? "0")).toBeLessThan(
+        BigInt(committedLaterPosition.globalPosition),
+      );
+      expect(await eventStore.loadStream("ORD-GATED-A")).toEqual([]);
+      expect(await eventStore.loadStream("ORD-GATED-B")).toHaveLength(1);
+
+      releaseCommit.resolve();
+      const committedEarlierPosition = await pendingAppend;
+      expect(committedEarlierPosition.globalPosition).toBe(pendingPosition);
+      expect(await eventStore.loadStream("ORD-GATED-A")).toHaveLength(1);
+    } finally {
+      releaseCommit.resolve();
+      await pendingAppend.catch(() => undefined);
+    }
   });
 
   it("authenticates every runtime identity directly", async () => {

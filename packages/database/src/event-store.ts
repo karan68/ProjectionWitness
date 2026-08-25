@@ -53,6 +53,7 @@ export interface OrderEventStoreOptions {
   lockTimeoutMs?: number;
   statementTimeoutMs?: number;
   generateEventId?: () => string;
+  beforeCommit?: (event: StoredOrderEvent) => Promise<void>;
 }
 
 function storedEvent(row: EventRow): StoredOrderEvent {
@@ -86,12 +87,14 @@ export class OrderEventStore {
   private readonly lockTimeoutMs: number;
   private readonly statementTimeoutMs: number;
   private readonly generateEventId: () => string;
+  private readonly beforeCommit: ((event: StoredOrderEvent) => Promise<void>) | undefined;
 
   constructor(pool: Pool, options: OrderEventStoreOptions = {}) {
     this.pool = pool;
     this.lockTimeoutMs = TimeoutSchema.parse(options.lockTimeoutMs ?? 2_000);
     this.statementTimeoutMs = TimeoutSchema.parse(options.statementTimeoutMs ?? 5_000);
     this.generateEventId = options.generateEventId ?? randomUUID;
+    this.beforeCommit = options.beforeCommit;
   }
 
   async append(input: AppendOrderEventInput): Promise<StoredOrderEvent> {
@@ -187,8 +190,10 @@ export class OrderEventStore {
         throw new Error("Event insert did not return the inserted row");
       }
 
+      const eventToCommit = storedEvent(insertedEvent);
+      await this.beforeCommit?.(eventToCommit);
       await client.query("COMMIT");
-      return storedEvent(insertedEvent);
+      return eventToCommit;
     } catch (error) {
       await rollback(client);
       throw error;

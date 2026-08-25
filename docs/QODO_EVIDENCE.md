@@ -18,7 +18,8 @@ configuration alone are not represented as review evidence.
 | PR | Scope | Qodo result | Material response |
 |---:|---|---|---|
 | [1](https://github.com/karan68/ProjectionWitness/pull/1) | Foundation, toolchain, CI, and versions | Two valid findings on `d28215d`; both resolved on `9a6e0c5` with zero new findings | Accepted and fixed |
-| [2](https://github.com/karan68/ProjectionWitness/pull/2) | Typed order domain, reducer, migration, and expected-version event store | Pending | Pending |
+| [2](https://github.com/karan68/ProjectionWitness/pull/2) | Typed order domain, reducer, migration, and expected-version event store | Three valid findings on `ab7efd6`; all resolved on `cc3cfcf` with zero new findings | Accepted and fixed |
+| [3](https://github.com/karan68/ProjectionWitness/pull/3) | Naive projector, API read, deterministic gap reproducer, and reliability gate | Eight findings on `efabb2a`; corrections committed in `27b979c` | Accepted and fixed; final persistent review remains visible on the PR |
 
 ### PR 1 findings
 
@@ -29,6 +30,28 @@ configuration alone are not represented as review evidence.
 
 Qodo updated its persistent review for commit `9a6e0c5` on 2026-08-25. It reported zero bugs,
 zero rule violations, and marked both prior findings resolved.
+
+### PR 2 findings
+
+1. **Runtime roles could not authenticate.** Accepted. Runtime roles are login-capable but receive
+  no committed password. A bootstrap validates the four secret runtime URLs and provisions
+  passwords transactionally; integration tests authenticate directly as every runtime identity.
+2. **`DATABASE_URL_MIGRATOR` was absent from the canonical environment contract.** Accepted and
+  added to `SOURCE_OF_TRUTH.md`.
+3. **Typecheck emitted build artifacts.** Accepted. Typecheck now uses a flat strict no-emit
+  configuration, while build retains emitting project references. An executable check confirmed
+  zero artifacts after typecheck.
+
+Qodo updated its persistent review for commit `cc3cfcf` on 2026-08-25. It reported zero bugs,
+zero rule violations, and marked all three findings resolved.
+
+### PR 3 findings
+
+All eight findings were accepted: connection-string override bypass, missing readiness/metadata
+routes, event-table truncation, negative money parsing, accidental workspace self-dependency,
+unbounded commit-gate failure, public internal-error leakage, and incomplete standalone proof
+verification. Commit `27b979c` fixes each with focused regressions. The same correction also fixed
+numeric projector ordering across bigint digit boundaries, which the ten-run race gate exposed.
 
 For every PR, record the URL, reviewed commit, findings, fixes, and evidence-backed disagreements
 before merge.

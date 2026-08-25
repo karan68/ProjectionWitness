@@ -1,4 +1,5 @@
 export { ExpectedVersionConflictError, InvalidOrderStreamError } from "./errors.js";
+export { parseSafeDatabaseInteger } from "./database-integer.js";
 export {
   OrderEventStore,
   type AppendOrderEventInput,
