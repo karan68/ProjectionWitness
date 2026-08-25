@@ -4,6 +4,8 @@ import {
   OrderEventStore,
   createDatabasePool,
   migrateDatabase,
+  provisionRuntimeRoles,
+  type RuntimeRoleUrls,
 } from "@projection-witness/database";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,7 +18,14 @@ function environmentVariable(name: string): string | undefined {
 }
 
 const databaseUrl = environmentVariable("DATABASE_URL_MIGRATOR") ?? "";
-const describeWithDatabase = databaseUrl === "" ? describe.skip : describe;
+const runtimeUrls: RuntimeRoleUrls = {
+  pw_api: environmentVariable("DATABASE_URL_API") ?? "",
+  pw_projector: environmentVariable("DATABASE_URL_PROJECTOR") ?? "",
+  pw_mcp_read: environmentVariable("DATABASE_URL_MCP_READ") ?? "",
+  pw_mcp_write: environmentVariable("DATABASE_URL_MCP_WRITE") ?? "",
+};
+const databaseUrls = [databaseUrl, ...Object.values(runtimeUrls)];
+const describeWithDatabase = databaseUrls.some((url) => url === "") ? describe.skip : describe;
 
 function postgresErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
@@ -37,26 +46,36 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 describeWithDatabase("PostgreSQL order event store", () => {
-  let pool: Pool;
+  let migratorPool: Pool;
+  let apiPool: Pool;
   let eventStore: OrderEventStore;
 
   beforeAll(async () => {
-    pool = createDatabasePool({
+    migratorPool = createDatabasePool({
       databaseUrl,
-      applicationName: "projection-witness-integration-test",
+      applicationName: "projection-witness-integration-migrator",
       maxConnections: 8,
     });
-    await migrateDatabase(pool);
-    eventStore = new OrderEventStore(pool);
+    await migrateDatabase(migratorPool);
+    await provisionRuntimeRoles(migratorPool, { migratorUrl: databaseUrl, runtimeUrls });
+    apiPool = createDatabasePool({
+      databaseUrl: runtimeUrls.pw_api,
+      applicationName: "projection-witness-integration-api",
+      maxConnections: 8,
+    });
+    const identity = await apiPool.query<{ current_user: string }>("SELECT current_user");
+    expect(identity.rows[0]?.current_user).toBe("pw_api");
+    eventStore = new OrderEventStore(apiPool);
   });
 
   beforeEach(async () => {
-    await pool.query("TRUNCATE events, event_streams CASCADE");
-    await pool.query("ALTER SEQUENCE event_global_position_seq RESTART WITH 1");
+    await migratorPool.query("TRUNCATE events, event_streams CASCADE");
+    await migratorPool.query("ALTER SEQUENCE event_global_position_seq RESTART WITH 1");
   });
 
   afterAll(async () => {
-    await pool.end();
+    await apiPool.end();
+    await migratorPool.end();
   });
 
   it("appends a typed stream at exact expected versions", async () => {
@@ -160,7 +179,7 @@ describeWithDatabase("PostgreSQL order event store", () => {
     });
 
     expect(await eventStore.loadStream("ORD-MISSING")).toEqual([]);
-    const streamHead = await pool.query("SELECT 1 FROM event_streams WHERE stream_id = $1", [
+    const streamHead = await apiPool.query("SELECT 1 FROM event_streams WHERE stream_id = $1", [
       "ORD-MISSING",
     ]);
     expect(streamHead.rowCount).toBe(0);
@@ -173,14 +192,14 @@ describeWithDatabase("PostgreSQL order event store", () => {
       event: { type: "OrderPlaced", totalCents: 100 },
     });
 
-    const blocker = await pool.connect();
+    const blocker = await apiPool.connect();
     try {
       await blocker.query("BEGIN");
       await blocker.query("SELECT 1 FROM event_streams WHERE stream_id = $1 FOR UPDATE", [
         "ORD-LOCKED",
       ]);
 
-      const boundedStore = new OrderEventStore(pool, {
+      const boundedStore = new OrderEventStore(apiPool, {
         lockTimeoutMs: 25,
         statementTimeoutMs: 1_000,
       });
@@ -217,14 +236,14 @@ describeWithDatabase("PostgreSQL order event store", () => {
       event: { type: "OrderPlaced", totalCents: 100 },
     });
 
-    const blocker = await pool.connect();
+    const blocker = await apiPool.connect();
     try {
       await blocker.query("BEGIN");
       await blocker.query("SELECT 1 FROM event_streams WHERE stream_id = $1 FOR UPDATE", [
         "ORD-STATEMENT",
       ]);
 
-      const boundedStore = new OrderEventStore(pool, {
+      const boundedStore = new OrderEventStore(apiPool, {
         lockTimeoutMs: 1_000,
         statementTimeoutMs: 25,
       });
@@ -255,40 +274,34 @@ describeWithDatabase("PostgreSQL order event store", () => {
     });
 
     await expect(
-      pool.query("UPDATE events SET metadata = '{}'::jsonb WHERE event_id = $1", [event.eventId]),
+      migratorPool.query("UPDATE events SET metadata = '{}'::jsonb WHERE event_id = $1", [
+        event.eventId,
+      ]),
     ).rejects.toThrow(/events are immutable/);
     await expect(
-      pool.query("DELETE FROM events WHERE event_id = $1", [event.eventId]),
+      migratorPool.query("DELETE FROM events WHERE event_id = $1", [event.eventId]),
     ).rejects.toThrow(/events are immutable/);
 
-    const client = await pool.connect();
-    try {
-      await client.query("BEGIN");
-      await client.query("SET LOCAL ROLE pw_api");
-      await expect(
-        client.query("UPDATE events SET metadata = '{}'::jsonb WHERE event_id = $1", [
-          event.eventId,
-        ]),
-      ).rejects.toThrow(/permission denied/);
-    } finally {
-      await client.query("ROLLBACK");
-      client.release();
-    }
+    await expect(
+      apiPool.query("UPDATE events SET metadata = '{}'::jsonb WHERE event_id = $1", [
+        event.eventId,
+      ]),
+    ).rejects.toThrow(/permission denied/);
   });
 
   it("applies migrations idempotently and records their checksum", async () => {
-    const result = await migrateDatabase(pool);
+    const result = await migrateDatabase(migratorPool);
 
     expect(result.applied).toEqual([]);
     expect(result.alreadyApplied).toContain("0001_event_store.sql");
 
-    const migration = await pool.query<{ checksum_sha256: string }>(
+    const migration = await migratorPool.query<{ checksum_sha256: string }>(
       "SELECT checksum_sha256 FROM schema_migrations WHERE version = $1",
       ["0001_event_store.sql"],
     );
     expect(migration.rows[0]?.checksum_sha256).toMatch(/^[0-9a-f]{64}$/);
 
-    const privileges = await pool.query<{
+    const privileges = await migratorPool.query<{
       role_name: string;
       can_read_events: boolean;
       can_insert_events: boolean;
@@ -313,7 +326,9 @@ describeWithDatabase("PostgreSQL order event store", () => {
     try {
       await writeFile(join(directory, "0001_event_store.sql"), "SELECT 1;\n", "utf8");
 
-      await expect(migrateDatabase(pool, directory)).rejects.toThrow(/different SHA-256 checksum/);
+      await expect(migrateDatabase(migratorPool, directory)).rejects.toThrow(
+        /different SHA-256 checksum/,
+      );
     } finally {
       await rm(directory, { recursive: true, force: true });
     }
@@ -321,7 +336,7 @@ describeWithDatabase("PostgreSQL order event store", () => {
 
   it("allows permanent global-position holes after a rolled-back insert", async () => {
     const duplicateEventId = "11111111-1111-4111-8111-111111111111";
-    const deterministicStore = new OrderEventStore(pool, {
+    const deterministicStore = new OrderEventStore(apiPool, {
       generateEventId: () => duplicateEventId,
     });
     await deterministicStore.append({
@@ -351,7 +366,7 @@ describeWithDatabase("PostgreSQL order event store", () => {
     const gateReached = deferred();
     const releaseCommit = deferred();
     let pendingPosition: string | undefined;
-    const gatedStore = new OrderEventStore(pool, {
+    const gatedStore = new OrderEventStore(apiPool, {
       beforeCommit: async (event) => {
         pendingPosition = event.globalPosition;
         gateReached.resolve();
@@ -383,5 +398,22 @@ describeWithDatabase("PostgreSQL order event store", () => {
     const committedEarlierPosition = await pendingAppend;
     expect(committedEarlierPosition.globalPosition).toBe(pendingPosition);
     expect(await eventStore.loadStream("ORD-GATED-A")).toHaveLength(1);
+  });
+
+  it("authenticates every runtime identity directly", async () => {
+    for (const [role, roleUrl] of Object.entries(runtimeUrls)) {
+      const rolePool = createDatabasePool({
+        databaseUrl: roleUrl,
+        applicationName: `projection-witness-direct-${role}`,
+        maxConnections: 1,
+      });
+      try {
+        const identity = await rolePool.query<{ current_user: string }>("SELECT current_user");
+        expect(identity.rows[0]?.current_user).toBe(role);
+        await rolePool.query("SELECT count(*) FROM events");
+      } finally {
+        await rolePool.end();
+      }
+    }
   });
 });

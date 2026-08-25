@@ -436,6 +436,7 @@ The repository commits `.env.example`, never `.env`.
 
 | Variable | Consumer | Secret | Purpose |
 |---|---|---:|---|
+| `DATABASE_URL_MIGRATOR` | Migration/bootstrap scripts | Yes | Schema-owner connection; forbidden to runtime services |
 | `DATABASE_URL_API` | API | Yes | Append/read role connection |
 | `DATABASE_URL_PROJECTOR` | Projector | Yes | Projection worker role connection |
 | `DATABASE_URL_MCP_READ` | Read MCP | Yes | Bounded evidence reads |

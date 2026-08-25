@@ -41,16 +41,16 @@ EXECUTE FUNCTION reject_event_mutation();
 DO $$
 BEGIN
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pw_api') THEN
-        CREATE ROLE pw_api NOLOGIN;
+        CREATE ROLE pw_api LOGIN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pw_projector') THEN
-        CREATE ROLE pw_projector NOLOGIN;
+        CREATE ROLE pw_projector LOGIN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pw_mcp_read') THEN
-        CREATE ROLE pw_mcp_read NOLOGIN;
+        CREATE ROLE pw_mcp_read LOGIN;
     END IF;
     IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'pw_mcp_write') THEN
-        CREATE ROLE pw_mcp_write NOLOGIN;
+        CREATE ROLE pw_mcp_write LOGIN;
     END IF;
 END;
 $$;

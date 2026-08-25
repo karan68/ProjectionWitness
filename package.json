@@ -16,7 +16,8 @@
   "scripts": {
     "build": "tsc --build",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:unit && npm run test:integration && npm run test:race && npm run build",
-    "clean": "tsc --build --clean",
+    "clean": "tsx scripts/clean.ts",
+    "db:bootstrap-roles": "tsx scripts/bootstrap-runtime-roles.ts",
     "db:config": "tsx scripts/docker-compose.ts config",
     "db:down": "tsx scripts/docker-compose.ts down",
     "db:migrate": "tsx scripts/migrate.ts",
@@ -36,7 +37,7 @@
     "test:integration": "vitest run --config vitest.workspace.ts tests/integration --passWithNoTests",
     "test:race": "vitest run --config vitest.workspace.ts tests/race --passWithNoTests",
     "test:unit": "vitest run --config vitest.workspace.ts tests/unit --passWithNoTests",
-    "typecheck": "tsc --build --pretty false"
+    "typecheck": "tsc --noEmit --pretty false -p tsconfig.typecheck.json"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",
