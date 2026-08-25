@@ -29,6 +29,7 @@
     "demo:verify": "tsx scripts/verify-demo.ts",
     "dev:api": "tsx apps/api/src/server.ts",
     "dev:projector:v1": "tsx apps/projector/src/run-naive-v1.ts",
+    "dev:projector:v2": "tsx apps/projector/src/run-gap-aware-v2.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",

@@ -449,6 +449,7 @@ The repository commits `.env.example`, never `.env`.
 | `TRUEFORGE_AGENT_NAME` | Demo client | No | Saved agent name |
 | `PROJECTION_NAME` | Projector/MCP | No | Fixed to `orders` in reference build |
 | `PROJECTOR_MODE` | Projector | No | Explicitly `naive-v1` or `gap-aware-v1` |
+| `PROJECTOR_GENERATION` | Projector | No | Monotonically increasing positive runtime generation |
 | `SOURCE_COMMIT_SHA` | Runtime attestation | No | Built source revision |
 | `REDUCER_BUNDLE_PATH` | Projector/MCP | No | Exact executable reducer bytes |
 | `DEMO_MODE` | Demo driver | No | Must default to `false` |
