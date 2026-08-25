@@ -26,6 +26,18 @@ gates in [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) pass.
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:down
 ```
 
+Set `DATABASE_URL_MIGRATOR` to the local migration-owner connection before applying ordered
+migrations:
+
+```powershell
+$env:DATABASE_URL_MIGRATOR = "postgresql://pw_migrator:<local-password>@127.0.0.1:55432/projection_witness"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:migrate
+```
+
+The migration runner applies each file once, records its SHA-256 checksum, and refuses an applied
+filename whose contents have changed. See [docs/EVENT_STORE.md](docs/EVENT_STORE.md) for the
+implemented append and immutability contracts.
+
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
 open during development:
