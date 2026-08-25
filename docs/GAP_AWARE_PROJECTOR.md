@@ -63,10 +63,11 @@ code must call this check before staging evidence.
 
 ## Starting V2
 
-Build first so `REDUCER_BUNDLE_PATH` identifies the self-contained executable artifact:
+Build the self-contained reducer artifact first so `REDUCER_BUNDLE_PATH` identifies the exact
+executable bytes:
 
 ```powershell
-& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run build
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run build:reducer
 
 $env:DATABASE_URL_PROJECTOR = "postgresql://pw_projector:<local-password>@127.0.0.1:55432/projection_witness"
 $env:PROJECTOR_MODE = "gap-aware-v1"
