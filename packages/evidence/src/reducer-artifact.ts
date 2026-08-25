@@ -81,24 +81,29 @@ const ExecutionTimeoutSchema = z.number().int().positive().safe().max(60_000);
 const verifiedEvidence = new WeakSet<object>();
 const WorkerResultSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("result"), first: z.unknown(), second: z.unknown() }).strict(),
-  z.object({ type: z.literal("error"), message: z.string() }).strict(),
+  z.object({ type: z.literal("error"), message: z.string().max(1_024) }).strict(),
 ]);
 
 const ReducerWorkerSource = `
 const { parentPort, workerData } = require("node:worker_threads");
+const { createContext, Script } = require("node:vm");
 const parseJson = JSON.parse.bind(JSON);
 const serializedEvents = JSON.stringify(workerData.events);
 
 async function main() {
-  const reducerModule = await import(workerData.artifactDataUrl);
-  if (typeof reducerModule.reduceOrder !== "function") {
+  const reducerModule = { exports: {} };
+  const context = createContext({ module: reducerModule, exports: reducerModule.exports });
+  new Script(workerData.artifactSource, {
+    filename: "projection-witness-order-reducer.cjs",
+  }).runInContext(context);
+  if (typeof reducerModule.exports.reduceOrder !== "function") {
     throw new Error("Reducer artifact must export reduceOrder");
   }
   const replay = () => {
     const events = parseJson(serializedEvents);
     let state = null;
     for (const storedEvent of events) {
-      state = reducerModule.reduceOrder(state, {
+      state = reducerModule.exports.reduceOrder(state, {
         streamId: storedEvent.streamId,
         streamVersion: storedEvent.streamVersion,
         ...storedEvent.payload,
@@ -143,16 +148,25 @@ export function isVerifiedReducerArtifactEvidence(
   return typeof value === "object" && value !== null && verifiedEvidence.has(value);
 }
 
+export function parseReducerWorkerMessage(
+  message: unknown,
+): { type: "result"; first: unknown; second: unknown } | { type: "error"; message: string } {
+  const parsed = WorkerResultSchema.safeParse(message);
+  if (!parsed.success) {
+    throw new Error("Reducer worker returned malformed evidence");
+  }
+  return parsed.data;
+}
+
 async function executeReducerBytes(
   artifactBytes: Buffer,
   events: readonly unknown[],
   maxExecutionMs: number,
 ): Promise<{ first: unknown; second: unknown }> {
-  const artifactDataUrl = `data:text/javascript;base64,${artifactBytes.toString("base64")}`;
   const worker = new Worker(ReducerWorkerSource, {
     eval: true,
     resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16 },
-    workerData: { artifactDataUrl, events },
+    workerData: { artifactSource: artifactBytes.toString("utf8"), events },
   });
 
   return new Promise((resolvePromise, rejectPromise) => {
@@ -173,9 +187,15 @@ async function executeReducerBytes(
     }, maxExecutionMs);
 
     worker.once("message", (message: unknown) => {
+      let parsed: ReturnType<typeof parseReducerWorkerMessage>;
+      try {
+        parsed = parseReducerWorkerMessage(message);
+      } catch (error) {
+        finish(() => rejectPromise(error));
+        return;
+      }
       finish(() => {
         void worker.terminate();
-        const parsed = WorkerResultSchema.parse(message);
         if (parsed.type === "error") {
           rejectPromise(new Error(parsed.message));
           return;

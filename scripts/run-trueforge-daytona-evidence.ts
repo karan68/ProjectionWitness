@@ -1,6 +1,9 @@
 import { TrueForge } from "@truefoundry/trueforge-sdk";
 import { z } from "zod";
-import { verifyTrueForgeReducerEvidence } from "./lib/verify-trueforge-reducer-evidence.js";
+import {
+  collectPersistedSessionEvents,
+  verifyTrueForgeReducerEvidence,
+} from "./lib/verify-trueforge-reducer-evidence.js";
 
 const CommitShaSchema = z.string().regex(/^[0-9a-f]{40}$/);
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -37,9 +40,10 @@ tar -xzf source.tar.gz
 cd 'ProjectionWitness-${commitSha}'
 npm ci --no-audit --no-fund --silent
 npm run --silent build:reducer
-actual_digest="$(sha256sum artifacts/order-reducer.mjs | cut -d' ' -f1)"
+artifact_path='artifacts/order-reducer.${expectedReducerSha256}.cjs'
+actual_digest="$(sha256sum "$artifact_path" | cut -d' ' -f1)"
 test "$actual_digest" = '${expectedReducerSha256}'
-npm run --silent evidence:run-reducer -- artifacts/order-reducer.mjs tests/fixtures/reducer-evidence-input.json`;
+npm run --silent evidence:run-reducer -- "$artifact_path" tests/fixtures/reducer-evidence-input.json`;
 
 const sessionResponse = await client.sessions.create({ agent: { name: agentName } });
 const sessionId = sessionResponse.data.id;
@@ -74,7 +78,7 @@ for await (const event of stream) {
 }
 
 const persistedPage = await client.sessions.listEvents(sessionId);
-const persistedEvents = persistedPage.data.map((item) => item.event);
+const persistedEvents = await collectPersistedSessionEvents(persistedPage);
 const verifiedResult = verifyTrueForgeReducerEvidence(persistedEvents, {
   command,
   reducerSha256: expectedReducerSha256,
@@ -91,6 +95,12 @@ console.log(
     reducerSha256: expectedReducerSha256,
     streamSha256: verifiedResult.stream.sha256,
     candidateSha256: verifiedResult.candidate.sha256,
-    persistedEventTypes: persistedEvents.map((event) => event.type),
+    persistedEventTypes: persistedEvents.map(
+      (event) =>
+        z
+          .object({ type: z.string().max(128) })
+          .passthrough()
+          .parse(event).type,
+    ),
   }),
 );

@@ -1,4 +1,5 @@
 import {
+  parseReducerWorkerMessage,
   runReducerArtifactEvidence,
   sha256File,
   type CanonicalOrderEvent,
@@ -50,12 +51,11 @@ const events: readonly CanonicalOrderEvent[] = [
 
 describe("exact reducer artifact evidence", () => {
   it("builds byte-identical bundles and executes the attested bytes twice", async () => {
-    const directory = await temporaryDirectory();
-    const first = await buildReducerBundle(join(directory, "first.mjs"));
-    const second = await buildReducerBundle(join(directory, "second.mjs"));
+    const first = await buildReducerBundle();
+    const second = await buildReducerBundle();
 
     expect(first.sha256).toBe(second.sha256);
-    expect(first.sha256).toBe("ec1c540fb4f2f9ececf20cdd14ce9c3f6d255074daadbb9d6056498aa2cd1bc6");
+    expect(first.sha256).toBe("4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637");
     expect(await readFile(first.outputPath)).toEqual(await readFile(second.outputPath));
     const result = await runReducerArtifactEvidence(first.outputPath, {
       schemaVersion: 1,
@@ -77,10 +77,10 @@ describe("exact reducer artifact evidence", () => {
   it("refuses a digest mismatch before importing the artifact", async () => {
     const directory = await temporaryDirectory();
     const markerPath = join(directory, "imported.txt");
-    const artifactPath = join(directory, "untrusted.mjs");
+    const artifactPath = join(directory, "untrusted.cjs");
     await writeFile(
       artifactPath,
-      `import { writeFileSync } from "node:fs";\nwriteFileSync(${JSON.stringify(markerPath)}, "executed");\nexport function reduceOrder() { throw new Error("not reached"); }\n`,
+      `require("node:fs").writeFileSync(${JSON.stringify(markerPath)}, "executed");\nmodule.exports.reduceOrder = () => { throw new Error("not reached"); };\n`,
     );
     const actualDigest = await sha256File(artifactPath);
 
@@ -98,16 +98,14 @@ describe("exact reducer artifact evidence", () => {
 
   it("executes the already-hashed bytes even when import-time code replaces the path", async () => {
     const directory = await temporaryDirectory();
-    const artifactPath = join(directory, "swapped.mjs");
-    const replacement = `export function reduceOrder() { return { orderId: "FORGED", totalCents: 1, paidCents: 1, paymentStatus: "PAID", fulfillmentStatus: "SHIPPED", lastStreamVersion: 2 }; }`;
+    const artifactPath = join(directory, "swapped.cjs");
+    const replacement = `module.exports.reduceOrder = () => ({ orderId: "FORGED", totalCents: 1, paidCents: 1, paymentStatus: "PAID", fulfillmentStatus: "SHIPPED", lastStreamVersion: 2 });`;
     await writeFile(
       artifactPath,
-      `import { writeFileSync } from "node:fs";
-writeFileSync(${JSON.stringify(artifactPath)}, ${JSON.stringify(replacement)});
-export function reduceOrder(state, event) {
+      `module.exports.reduceOrder = function (state, event) {
   if (state === null) return { orderId: event.streamId, totalCents: event.totalCents, paidCents: 0, paymentStatus: "AWAITING_PAYMENT", fulfillmentStatus: "NOT_SHIPPED", lastStreamVersion: event.streamVersion };
   return { ...state, paidCents: state.totalCents, paymentStatus: "PAID", lastStreamVersion: event.streamVersion };
-}`,
+};`,
     );
     const expectedDigest = await sha256File(artifactPath);
 
@@ -119,13 +117,14 @@ export function reduceOrder(state, event) {
       events,
     });
     expect(result.candidate.value.orderId).toBe("ORD-DAYTONA");
+    await writeFile(artifactPath, replacement);
     expect(await readFile(artifactPath, "utf8")).toBe(replacement);
   });
 
   it("terminates a reducer that exceeds the trusted execution deadline", async () => {
     const directory = await temporaryDirectory();
-    const artifactPath = join(directory, "looping.mjs");
-    await writeFile(artifactPath, "export function reduceOrder() { while (true) {} }");
+    const artifactPath = join(directory, "looping.cjs");
+    await writeFile(artifactPath, "module.exports.reduceOrder = () => { while (true) {} };");
     const expectedDigest = await sha256File(artifactPath);
 
     await expect(
@@ -141,5 +140,40 @@ export function reduceOrder(state, event) {
         { maxExecutionMs: 100 },
       ),
     ).rejects.toThrow(/configured deadline/);
+  });
+
+  it("does not expose the worker channel to artifact initialization code", async () => {
+    const directory = await temporaryDirectory();
+    const artifactPath = join(directory, "channel-forgery.cjs");
+    await writeFile(
+      artifactPath,
+      `try {
+  require("node:worker_threads").parentPort.postMessage({
+    type: "result",
+    first: { orderId: "FORGED" },
+    second: { orderId: "FORGED" },
+  });
+} catch {}
+module.exports.reduceOrder = function (state, event) {
+  if (state === null) return { orderId: event.streamId, totalCents: event.totalCents, paidCents: 0, paymentStatus: "AWAITING_PAYMENT", fulfillmentStatus: "NOT_SHIPPED", lastStreamVersion: event.streamVersion };
+  return { ...state, paidCents: state.totalCents, paymentStatus: "PAID", lastStreamVersion: event.streamVersion };
+};`,
+    );
+    const expectedDigest = await sha256File(artifactPath);
+
+    const result = await runReducerArtifactEvidence(artifactPath, {
+      schemaVersion: 1,
+      expectedReducerSha256: expectedDigest,
+      streamId: "ORD-DAYTONA",
+      headVersion: 2,
+      events,
+    });
+    expect(result.candidate.value.orderId).toBe("ORD-DAYTONA");
+  });
+
+  it("maps malformed worker messages to a bounded validation error", () => {
+    expect(() => parseReducerWorkerMessage({ type: "result", first: {} })).toThrow(
+      /malformed evidence/,
+    );
   });
 });

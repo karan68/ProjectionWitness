@@ -41,7 +41,7 @@ checks nested current/candidate hashes, then computes `evidenceSha256` over the 
 with only `evidenceSha256` omitted. The fixed project vector is:
 
 ```text
-a512dadc2f53f1a9de2cff45b5fbc97d3c9d21e2eb27ed76942a5425e9e87f61
+c45752e3a38ef7656eb121e5aa5b1aff5412b5645ed91408ea0a07df6c1366c7
 ```
 
 This PR does not persist a repair plan or authorize a write. Plan immutability, transactional apply,
@@ -49,13 +49,14 @@ and stale-state rechecks belong to the next safety PR.
 
 ## Reducer Artifact
 
-Pinned `esbuild@0.28.2` bundles the reducer, domain validation, and dependencies into one ESM file.
+Pinned `esbuild@0.28.2` bundles the reducer, domain validation, and dependencies into one
+content-addressed CommonJS file.
 No source map, timestamp, absolute output path, or legal-comment side file is emitted. Two clean
 builds must be byte-identical, and the unit suite pins the current known answer:
 
 ```text
-byteLength  494422
-sha256      ec1c540fb4f2f9ececf20cdd14ce9c3f6d255074daadbb9d6056498aa2cd1bc6
+byteLength  495300
+sha256      4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637
 ```
 
 Build and execute the bounded fixture:
@@ -63,17 +64,17 @@ Build and execute the bounded fixture:
 ```powershell
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run build:reducer
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run evidence:run-reducer -- `
-  .\artifacts\order-reducer.mjs `
+  .\artifacts\order-reducer.4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637.cjs `
   .\tests\fixtures\reducer-evidence-input.json
 ```
 
-The runner reads the artifact once, checks those bytes, converts those same bytes to a data URL, and
-imports it inside a resource-limited worker. The parent terminates the worker at a trusted deadline
-(2 seconds by default). One regression artifact replaces its own filesystem path during import and
-proves the already-hashed bytes still determine the candidate; another loops forever and is
-terminated. A digest mismatch is rejected before any artifact code executes. Event, canonical-byte,
-and execution-time limits are trusted runner options, not fields the evidence JSON can raise. The
-CLI rejects an input file larger than 2 MiB before reading it.
+The runner reads the artifact once, checks those bytes, and evaluates that source inside a restricted
+VM context within a resource-limited worker. The artifact context has no worker channel, `require`,
+or `process`; only the wrapper can return replay results. The parent safely validates the message and
+terminates the worker at a trusted deadline (2 seconds by default). Regressions cover channel-forgery
+attempts, malformed messages, path replacement, infinite loops, and pre-execution digest mismatch.
+Event, canonical-byte, and execution-time limits are trusted runner options, not fields the evidence
+JSON can raise. The CLI rejects an input file larger than 2 MiB before reading it.
 
 Verified fixture output:
 
@@ -96,10 +97,11 @@ The repository includes `npm run evidence:trueforge-daytona -- <commit> <reducer
 launcher creates a named TrueForge session, requires the sandbox execution tool, downloads only the
 exact public commit, checksum-verifies Node 22.23.2, installs npm 10.9.9, runs `npm ci`, rebuilds the
 artifact, compares the runtime digest, and executes the bounded fixture. Verification requires
-exactly one persisted system `exec` call whose command matches byte-for-byte, one linked successful
+all persisted event pages, exactly one system `exec` call whose command matches byte-for-byte, one linked successful
 response with exit code zero, one `sandbox.created`, one successful `turn.done`, and a complete
 schema-valid final JSON result matching the fixed stream, candidate, and reducer hashes. Model prose
-or arbitrary substrings cannot satisfy the verifier.
+or arbitrary substrings cannot satisfy the verifier. Event count and every persisted text field are
+bounded before JSON parsing.
 
 The exact reducer run is not yet claimed as successful in Daytona:
 

@@ -1,4 +1,7 @@
-import { verifyTrueForgeReducerEvidence } from "../../scripts/lib/verify-trueforge-reducer-evidence.js";
+import {
+  collectPersistedSessionEvents,
+  verifyTrueForgeReducerEvidence,
+} from "../../scripts/lib/verify-trueforge-reducer-evidence.js";
 import { describe, expect, it } from "vitest";
 
 const command = "printf exact-command";
@@ -120,5 +123,50 @@ describe("TrueForge reducer evidence verification", () => {
         expected,
       ),
     ).toThrow(/expected fixture/);
+  });
+
+  it("collects every persisted page so an additional tool call cannot be hidden", async () => {
+    async function* paginatedItems() {
+      for (const event of persistedEvents()) {
+        yield { event };
+      }
+      yield {
+        event: {
+          type: "model.message",
+          toolCalls: [
+            {
+              id: "hidden-call",
+              type: "function",
+              function: { name: "exec", arguments: JSON.stringify({ command }) },
+              toolInfo: { type: "truefoundry-system", name: "exec" },
+            },
+          ],
+        },
+      };
+    }
+
+    const allEvents = await collectPersistedSessionEvents(paginatedItems());
+    expect(() => verifyTrueForgeReducerEvidence(allEvents, expected)).toThrow(/exactly one/);
+  });
+
+  it("rejects oversized persisted text and event counts", async () => {
+    const oversizedArguments = persistedEvents();
+    const modelMessage = oversizedArguments.find((event) => event.type === "model.message");
+    if (modelMessage === undefined || !("toolCalls" in modelMessage)) {
+      throw new Error("Test model message is missing");
+    }
+    const firstToolCall = modelMessage.toolCalls[0];
+    if (firstToolCall === undefined) {
+      throw new Error("Test tool call is missing");
+    }
+    firstToolCall.function.arguments = "x".repeat(131_073);
+    expect(() => verifyTrueForgeReducerEvidence(oversizedArguments, expected)).toThrow();
+
+    async function* tooManyItems() {
+      for (let index = 0; index <= 1_000; index += 1) {
+        yield { event: { type: "model.message", index } };
+      }
+    }
+    await expect(collectPersistedSessionEvents(tooManyItems())).rejects.toThrow(/event count/);
   });
 });

@@ -32,6 +32,7 @@ export {
 export {
   ReducerArtifactEvidenceInputSchema,
   ReducerArtifactEvidenceResultSchema,
+  parseReducerWorkerMessage,
   runReducerArtifactEvidence,
   sha256File,
   type ReducerArtifactEvidenceInput,

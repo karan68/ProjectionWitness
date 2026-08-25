@@ -1,13 +1,19 @@
 import { ReducerArtifactEvidenceResultSchema } from "@projection-witness/evidence";
 import { z } from "zod";
 
+const MaximumPersistedEvents = 1_000;
+const MaximumToolArgumentsBytes = 131_072;
+const MaximumToolResponseBytes = 2_097_152;
+const MaximumCommandBytes = 65_536;
+const MaximumResultBytes = 1_048_576;
+
 const ToolCallSchema = z
   .object({
     id: z.string().min(1),
     function: z
       .object({
         name: z.literal("exec"),
-        arguments: z.string(),
+        arguments: z.string().max(MaximumToolArgumentsBytes),
       })
       .strict(),
     toolInfo: z
@@ -21,8 +27,8 @@ const ToolCallSchema = z
 
 const ExecArgumentsSchema = z
   .object({
-    command: z.string(),
-    intent: z.string().optional(),
+    command: z.string().max(MaximumCommandBytes),
+    intent: z.string().max(4_096).optional(),
   })
   .strict();
 
@@ -32,7 +38,7 @@ const ToolResponseContentSchema = z
     response: z
       .object({
         exitCode: z.literal(0),
-        result: z.string(),
+        result: z.string().max(MaximumResultBytes),
       })
       .strict(),
   })
@@ -41,8 +47,8 @@ const ToolResponseContentSchema = z
 const PersistedToolResponseSchema = z
   .object({
     type: z.literal("tool.response"),
-    toolCallId: z.string().min(1),
-    content: z.string(),
+    toolCallId: z.string().min(1).max(256),
+    content: z.string().max(MaximumToolResponseBytes),
   })
   .passthrough();
 
@@ -61,11 +67,40 @@ export interface ExpectedTrueForgeReducerEvidence {
   candidateSha256: string;
 }
 
+export async function collectPersistedSessionEvents(
+  items: AsyncIterable<{ event: unknown }>,
+): Promise<unknown[]> {
+  const events: unknown[] = [];
+  for await (const item of items) {
+    if (events.length >= MaximumPersistedEvents) {
+      throw new Error("Persisted TrueForge event count exceeds the verification limit");
+    }
+    events.push(item.event);
+  }
+  return events;
+}
+
 export function verifyTrueForgeReducerEvidence(
   events: readonly unknown[],
   expected: ExpectedTrueForgeReducerEvidence,
 ) {
-  const records = events.map((event) => z.object({ type: z.string() }).passthrough().parse(event));
+  const boundedEvents = z.array(z.unknown()).max(MaximumPersistedEvents).parse(events);
+  const boundedExpected = z
+    .object({
+      command: z.string().max(MaximumCommandBytes),
+      reducerSha256: z.string().regex(/^[0-9a-f]{64}$/),
+      streamId: z.string().min(1).max(128),
+      streamSha256: z.string().regex(/^[0-9a-f]{64}$/),
+      candidateSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .strict()
+    .parse(expected);
+  const records = boundedEvents.map((event) =>
+    z
+      .object({ type: z.string().max(128) })
+      .passthrough()
+      .parse(event),
+  );
   const sandboxEvents = records.filter((event) => event.type === "sandbox.created");
   if (sandboxEvents.length !== 1) {
     throw new Error("Expected exactly one persisted sandbox.created event");
@@ -93,7 +128,7 @@ export function verifyTrueForgeReducerEvidence(
   }
   const toolCall = ToolCallSchema.parse(toolCalls[0]);
   const arguments_ = ExecArgumentsSchema.parse(JSON.parse(toolCall.function.arguments));
-  if (arguments_.command !== expected.command) {
+  if (arguments_.command !== boundedExpected.command) {
     throw new Error("Persisted exec command does not match the requested evidence command");
   }
 
@@ -114,10 +149,10 @@ export function verifyTrueForgeReducerEvidence(
   }
   const result = ReducerArtifactEvidenceResultSchema.parse(JSON.parse(finalLine));
   if (
-    result.reducerSha256 !== expected.reducerSha256 ||
-    result.stream.streamId !== expected.streamId ||
-    result.stream.sha256 !== expected.streamSha256 ||
-    result.candidate.sha256 !== expected.candidateSha256
+    result.reducerSha256 !== boundedExpected.reducerSha256 ||
+    result.stream.streamId !== boundedExpected.streamId ||
+    result.stream.sha256 !== boundedExpected.streamSha256 ||
+    result.candidate.sha256 !== boundedExpected.candidateSha256
   ) {
     throw new Error("Reducer evidence result does not match the expected fixture and artifact");
   }

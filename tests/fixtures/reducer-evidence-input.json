@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "expectedReducerSha256": "ec1c540fb4f2f9ececf20cdd14ce9c3f6d255074daadbb9d6056498aa2cd1bc6",
+  "expectedReducerSha256": "4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637",
   "streamId": "ORD-DAYTONA-FIXTURE",
   "headVersion": 2,
   "events": [

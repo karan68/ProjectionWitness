@@ -17,9 +17,6 @@ import {
 import { GapAwareOrderProjector } from "@projection-witness/projector";
 import { buildReducerBundle, type ReducerBundleResult } from "../../scripts/lib/reducer-bundle.js";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -51,7 +48,6 @@ describeWithDatabase("PostgreSQL canonical evidence snapshots", () => {
   let apiPool: Pool;
   let projectorPool: Pool;
   let mcpReadPool: Pool;
-  let reducerDirectory: string | undefined;
   let reducerBundle: ReducerBundleResult;
 
   beforeAll(async () => {
@@ -72,15 +68,11 @@ describeWithDatabase("PostgreSQL canonical evidence snapshots", () => {
       applicationName: "projection-witness-evidence-read-test",
     });
     await migrateDatabase(migratorPool);
-    reducerDirectory = await mkdtemp(join(tmpdir(), "projection-witness-db-evidence-"));
-    reducerBundle = await buildReducerBundle(join(reducerDirectory, "order-reducer.mjs"));
+    reducerBundle = await buildReducerBundle();
   });
 
   afterAll(async () => {
     await Promise.all([mcpReadPool.end(), projectorPool.end(), apiPool.end(), migratorPool.end()]);
-    if (reducerDirectory !== undefined) {
-      await rm(reducerDirectory, { recursive: true, force: true });
-    }
   });
 
   it("keeps stream, row, runtime, and envelope digests stable across repeated reads", async () => {

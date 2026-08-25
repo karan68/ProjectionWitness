@@ -6,10 +6,7 @@ import {
   type VerifiedReducerArtifactEvidence,
 } from "@projection-witness/evidence";
 import { buildReducerBundle } from "../../scripts/lib/reducer-bundle.js";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 const events: readonly CanonicalOrderEvent[] = [
   {
@@ -34,12 +31,10 @@ const events: readonly CanonicalOrderEvent[] = [
   },
 ];
 
-let temporaryDirectory: string;
 let reducerEvidence: VerifiedReducerArtifactEvidence;
 
 beforeAll(async () => {
-  temporaryDirectory = await mkdtemp(join(tmpdir(), "projection-witness-envelope-"));
-  const bundle = await buildReducerBundle(join(temporaryDirectory, "order-reducer.mjs"));
+  const bundle = await buildReducerBundle();
   reducerEvidence = await runReducerArtifactEvidence(bundle.outputPath, {
     schemaVersion: 1,
     expectedReducerSha256: bundle.sha256,
@@ -47,10 +42,6 @@ beforeAll(async () => {
     headVersion: 2,
     events,
   });
-});
-
-afterAll(async () => {
-  await rm(temporaryDirectory, { recursive: true, force: true });
 });
 
 function validEnvelope() {
@@ -192,7 +183,7 @@ describe("repair evidence envelope", () => {
 
   it("has a stable project-specific evidence digest", () => {
     expect(validEnvelope().evidenceSha256).toBe(
-      "a512dadc2f53f1a9de2cff45b5fbc97d3c9d21e2eb27ed76942a5425e9e87f61",
+      "c45752e3a38ef7656eb121e5aa5b1aff5412b5645ed91408ea0a07df6c1366c7",
     );
   });
 });
