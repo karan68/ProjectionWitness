@@ -2,6 +2,7 @@ import {
   consumeTurnStream,
   readTurnCheckpoint,
   reconnectTurn,
+  startTurn,
   type TurnCheckpoint,
   writeTurnCheckpoint,
 } from "../../scripts/lib/trueforge-turn.js";
@@ -55,6 +56,39 @@ describe("TrueForge turn reconnect", () => {
     expect(result.lastSequenceNumber).toBe(3);
     expect(persisted.map((checkpoint) => checkpoint.lastSequenceNumber)).toEqual([1, 2, 3]);
     expect(onEvent).toHaveBeenCalledTimes(3);
+  });
+
+  it("creates one identified turn before subscribing from cursor zero", async () => {
+    const subscribeToTurn = vi.fn(async () => events("turn.created", "turn.done"));
+    const client = {
+      sessions: {
+        create: vi.fn(async () => ({ data: { id: "session-1" } })),
+        createTurn: vi.fn(async () => ({ data: { id: "turn-1" } })),
+        subscribeToTurn,
+        getTurn: vi.fn(),
+        listTurnEvents: vi.fn(),
+      },
+    };
+    const persisted: TurnCheckpoint[] = [];
+
+    const result = await startTurn(
+      client,
+      "projection-witness",
+      "Investigate ORD-1",
+      async (next) => {
+        persisted.push(next);
+      },
+    );
+
+    expect(client.sessions.createTurn).toHaveBeenCalledWith("session-1", {
+      input: [{ type: "user.message", content: "Investigate ORD-1" }],
+      previousTurnId: "none",
+    });
+    expect(subscribeToTurn).toHaveBeenCalledWith("session-1", "turn-1", {
+      afterSequenceNumber: 0,
+    });
+    expect(persisted.map((item) => item.lastSequenceNumber)).toEqual([0, 1, 2]);
+    expect(result.lastSequenceNumber).toBe(2);
   });
 
   it("resubscribes to a running turn after the exclusive saved cursor", async () => {
