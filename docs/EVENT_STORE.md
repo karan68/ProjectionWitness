@@ -55,16 +55,21 @@ connection.
 ## Verification
 
 The unit suite covers reducer transitions, schema rejection, version gaps, cross-stream events,
-safe-integer accumulation, and non-mutation of prior state.
+safe-integer accumulation, explicit overpayment-as-paid behavior, and non-mutation of prior state.
 
 The real PostgreSQL suite covers:
 
 - Exact expected-version append and ordered stream reads.
 - Exactly one winner for two concurrent version-zero appends.
+- No stream head or event after a missing stream is expected at a nonzero version.
 - No inserted event after stale or invalid attempts.
+- Bounded lock and statement waits under a deliberately held stream-head lock.
+- Connection reuse after a lock timeout rollback.
 - Event mutation refusal through both role permissions and the owner-visible trigger.
+- Read-only event access for projector and MCP evidence roles without insert permission.
 - Idempotent migration and stored checksum.
 - Refusal when an applied migration filename is presented with different contents.
+- Permanent global-position sequence holes after a post-`nextval` rollback.
 
 The repeated concurrency suite and the genuine projector checkpoint race are intentionally not
 claimed here; they belong to PR 3.

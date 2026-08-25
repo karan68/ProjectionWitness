@@ -53,6 +53,24 @@ describe("reduceOrder", () => {
     expect(state.paymentStatus).toBe("PAID");
   });
 
+  it("represents overpayment as paid without inventing a rejection rule", () => {
+    const placed = reduceOrder(
+      null,
+      versionOrderEvent("ORD-OVERPAID", 1, { type: "OrderPlaced", totalCents: 100 }),
+    );
+    const paid = reduceOrder(
+      placed,
+      versionOrderEvent("ORD-OVERPAID", 2, {
+        type: "PaymentCaptured",
+        paymentId: "PAY-OVER",
+        amountCents: 101,
+      }),
+    );
+
+    expect(paid.paidCents).toBe(101);
+    expect(paid.paymentStatus).toBe("PAID");
+  });
+
   it("rejects invalid money and unknown event fields at runtime", () => {
     expect(() =>
       versionOrderEvent("ORD-1042", 1, {

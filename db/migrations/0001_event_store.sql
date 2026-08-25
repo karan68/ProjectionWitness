@@ -58,7 +58,8 @@ $$;
 REVOKE ALL ON event_streams, events FROM PUBLIC;
 REVOKE ALL ON SEQUENCE event_global_position_seq FROM PUBLIC;
 
-GRANT USAGE ON SCHEMA public TO pw_api;
-GRANT SELECT, INSERT, UPDATE ON event_streams TO pw_api;
-GRANT SELECT, INSERT ON events TO pw_api;
+GRANT USAGE ON SCHEMA public TO pw_api, pw_projector, pw_mcp_read, pw_mcp_write;
+GRANT SELECT ON event_streams, events TO pw_api, pw_projector, pw_mcp_read, pw_mcp_write;
+GRANT INSERT, UPDATE ON event_streams TO pw_api;
+GRANT INSERT ON events TO pw_api;
 GRANT USAGE, SELECT ON SEQUENCE event_global_position_seq TO pw_api;
