@@ -156,24 +156,35 @@ describe("TrueForge saved-agent contract", () => {
       trueforgeTurnId: "turn-1",
       trueforgeToolCallId: "call-1",
     };
+    const applyToolCall = {
+      id: "call-1",
+      function: {
+        name: "apply_projection_repair",
+        arguments: JSON.stringify(approvalArguments),
+      },
+      toolInfo: {
+        type: "mcp",
+        serverId: "server-1",
+        serverName: "projection-witness-write",
+        name: "apply_projection_repair",
+      },
+    };
     const sourceEvent = {
       id: "event-1",
       type: "model.message",
       threadId: "main",
       toolCalls: [
         {
-          id: "call-1",
-          function: {
-            name: "apply_projection_repair",
-            arguments: JSON.stringify(approvalArguments),
-          },
+          id: "read-call",
+          function: { name: "get_projection_runtime", arguments: '{"projectionName":"orders"}' },
           toolInfo: {
             type: "mcp",
-            serverId: "server-1",
-            serverName: "projection-witness-write",
-            name: "apply_projection_repair",
+            serverId: "server-read",
+            serverName: "projection-witness-read",
+            name: "get_projection_runtime",
           },
         },
+        applyToolCall,
       ],
     };
     const approval = {
@@ -195,7 +206,7 @@ describe("TrueForge saved-agent contract", () => {
             ...sourceEvent,
             toolCalls: [
               {
-                ...sourceEvent.toolCalls[0],
+                ...applyToolCall,
                 toolInfo: {
                   type: "mcp",
                   serverName: "projection-witness-read",
