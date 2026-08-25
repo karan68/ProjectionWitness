@@ -74,6 +74,17 @@ actually loads. It intentionally cannot discover a historical position already s
 See [docs/GAP_AWARE_PROJECTOR.md](docs/GAP_AWARE_PROJECTOR.md) for the algorithm, explicit
 permanent-hole retirement policy, runtime refusal contract, startup command, and PostgreSQL proof.
 
+## Canonical evidence
+
+The evidence package implements RFC 8785 canonicalization, SHA-256 stream/row/runtime/candidate
+fingerprints, deterministic double replay, a self-derived repair envelope, and an exact reducer
+artifact runner. The PostgreSQL role-split path and local artifact known answers pass. The real
+exact-reducer Daytona run is currently blocked before sandbox creation by model quota and is not
+claimed as complete.
+
+See [docs/EVIDENCE.md](docs/EVIDENCE.md) for the trust boundary, known hashes, executable commands,
+and persisted TrueForge attempt status.
+
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
 open during development:

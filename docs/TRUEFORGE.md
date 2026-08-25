@@ -55,8 +55,20 @@ It contains Python `3.13.15` and standard download/extraction tools. A follow-up
 4. Returned exit code `0` through TrueForge's persisted tool response.
 
 This proves the pinned Node bootstrap and JavaScript execution path in a real Daytona sandbox. It
-does not yet prove an exact reducer artifact: that digest and source commit remain blocked on the
-reducer implementation and bundle produced in the dedicated evidence PR.
+does not by itself prove an exact reducer artifact.
+
+## Exact reducer run
+
+The evidence implementation now produces a byte-reproducible reducer bundle, checks its digest
+before import, replays a bounded canonical stream twice, and verifies persisted TrueForge events.
+The local artifact/CLI and PostgreSQL paths pass. Two real TrueForge attempts did not reach Daytona:
+
+- Flash session `01m0wdmwq3kw0add7ch5ekxd2y` stalled before `sandbox.created` and was cancelled.
+- Pro session `01m0wdwe0mt1gtcwf7c3nwcbv4` failed before `sandbox.created` with Gemini HTTP 429;
+  its free-tier request and input-token quotas were both reported as `0`.
+
+No exact-reducer Daytona success is claimed yet. See [EVIDENCE.md](EVIDENCE.md) for the pinned
+artifact digest, fixture hashes, launcher contract, and rerun command.
 
 ## Current security boundary
 
