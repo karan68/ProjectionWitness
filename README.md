@@ -111,6 +111,16 @@ in [docs/TRUEFORGE.md](docs/TRUEFORGE.md); their deterministic contract tests pa
 registration, read-tool turn, and completed-turn reconnect now pass at an exact public commit. A
 real native approval run is not yet claimed.
 
+## Approval-bound demo
+
+The exact public-commit demo now reproduces the real projector gap, stages a reducer-derived plan,
+shows the native TrueForge approval card, and proves that native denial leaves the plan, audit,
+row, and public API unchanged. A fresh approval is left pending for the operator; successful apply
+is not claimed before that decision.
+
+See [docs/DEMO.md](docs/DEMO.md) for commands, hashes, persisted TrueForge IDs, zero-mutation denial
+evidence, and the remaining approval step.
+
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
 open during development:
