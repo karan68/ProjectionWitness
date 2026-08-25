@@ -19,6 +19,7 @@
     "clean": "tsc --build --clean",
     "db:config": "tsx scripts/docker-compose.ts config",
     "db:down": "tsx scripts/docker-compose.ts down",
+    "db:migrate": "tsx scripts/migrate.ts",
     "db:reset": "tsx scripts/docker-compose.ts reset",
     "db:serve": "tsx scripts/docker-compose.ts serve",
     "db:up": "tsx scripts/docker-compose.ts up",

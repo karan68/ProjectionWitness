@@ -4,5 +4,10 @@
   "compilerOptions": {
     "noEmit": true
   },
-  "include": ["scripts/**/*.ts", "vitest.workspace.ts"]
+  "include": ["scripts/**/*.ts", "vitest.workspace.ts"],
+  "references": [
+    { "path": "./packages/domain" },
+    { "path": "./packages/reducer" },
+    { "path": "./packages/database" }
+  ]
 }
