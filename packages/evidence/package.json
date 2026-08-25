@@ -1,0 +1,15 @@
+{
+  "name": "@projection-witness/evidence",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@projection-witness/domain": "0.0.0",
+    "@projection-witness/reducer": "0.0.0",
+    "canonicalize": "4.0.0",
+    "zod": "4.4.3"
+  }
+}

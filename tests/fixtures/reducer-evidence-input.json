@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "expectedReducerSha256": "ec1c540fb4f2f9ececf20cdd14ce9c3f6d255074daadbb9d6056498aa2cd1bc6",
+  "streamId": "ORD-DAYTONA-FIXTURE",
+  "headVersion": 2,
+  "events": [
+    {
+      "eventId": "50000000-0000-4000-8000-000000000001",
+      "globalPosition": "100",
+      "streamId": "ORD-DAYTONA-FIXTURE",
+      "streamVersion": 1,
+      "eventType": "OrderPlaced",
+      "payload": {
+        "type": "OrderPlaced",
+        "totalCents": 12900
+      },
+      "metadata": {},
+      "recordedAt": "2026-08-26T03:00:00.000Z"
+    },
+    {
+      "eventId": "50000000-0000-4000-8000-000000000002",
+      "globalPosition": "102",
+      "streamId": "ORD-DAYTONA-FIXTURE",
+      "streamVersion": 2,
+      "eventType": "PaymentCaptured",
+      "payload": {
+        "type": "PaymentCaptured",
+        "paymentId": "PAY-DAYTONA-FIXTURE",
+        "amountCents": 12900
+      },
+      "metadata": {},
+      "recordedAt": "2026-08-26T03:00:01.000Z"
+    }
+  ],
+  "maxEvents": 1000,
+  "maxCanonicalBytes": 1048576
+}

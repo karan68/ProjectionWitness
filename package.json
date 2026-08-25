@@ -15,6 +15,7 @@
   "packageManager": "npm@10.9.9",
   "scripts": {
     "build": "tsc --build",
+    "build:reducer": "tsx scripts/build-reducer-bundle.ts",
     "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:unit && npm run test:integration && npm run test:race && npm run build",
     "clean": "tsx scripts/clean.ts",
     "db:bootstrap-roles": "tsx scripts/bootstrap-runtime-roles.ts",
@@ -30,6 +31,7 @@
     "dev:api": "tsx apps/api/src/server.ts",
     "dev:projector:v1": "tsx apps/projector/src/run-naive-v1.ts",
     "dev:projector:v2": "tsx apps/projector/src/run-gap-aware-v2.ts",
+    "evidence:run-reducer": "tsx scripts/run-reducer-evidence.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
@@ -53,6 +55,7 @@
     "@truefoundry/trueforge": "0.1.4",
     "@types/node": "22.20.1",
     "@types/pg": "8.23.1",
+    "esbuild": "0.28.2",
     "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vitest": "4.1.11"
