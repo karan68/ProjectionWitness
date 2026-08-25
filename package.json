@@ -32,6 +32,7 @@
     "dev:projector:v1": "tsx apps/projector/src/run-naive-v1.ts",
     "dev:projector:v2": "tsx apps/projector/src/run-gap-aware-v2.ts",
     "evidence:run-reducer": "tsx scripts/run-reducer-evidence.ts",
+    "evidence:trueforge-daytona": "tsx scripts/run-trueforge-daytona-evidence.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
