@@ -9,6 +9,7 @@
     { "path": "./packages/domain" },
     { "path": "./packages/reducer" },
     { "path": "./packages/database" },
+    { "path": "./packages/repair" },
     { "path": "./apps/api" },
     { "path": "./apps/projector" },
     { "path": "./apps/demo-driver" }
