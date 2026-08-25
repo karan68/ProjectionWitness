@@ -17,12 +17,22 @@ export const TurnCheckpointSchema = z
 export type TurnCheckpoint = z.infer<typeof TurnCheckpointSchema>;
 
 const TurnEventSchema = z.object({ type: z.string().min(1).max(128) }).passthrough();
+const StreamEventSchema = z
+  .object({
+    data: z.unknown(),
+    id: z.string().regex(/^[1-9][0-9]*$/),
+  })
+  .passthrough();
 const TurnStateSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("running") }).passthrough(),
   z.object({ status: z.literal("done") }).passthrough(),
   z.object({ status: z.literal("cancelled") }).passthrough(),
   z.object({ status: z.literal("error") }).passthrough(),
 ]);
+
+interface TrueForgeTurnStream extends AsyncIterable<unknown> {
+  withMetadata(): AsyncIterable<{ data: unknown; id?: string }>;
+}
 
 interface TrueForgeTurnClient {
   sessions: {
@@ -31,7 +41,7 @@ interface TrueForgeTurnClient {
       sessionId: string,
       turnId: string,
       request: { afterSequenceNumber: number },
-    ): Promise<AsyncIterable<unknown>>;
+    ): Promise<TrueForgeTurnStream>;
     listTurnEvents(
       sessionId: string,
       turnId: string,
@@ -84,25 +94,33 @@ export async function writeTurnCheckpoint(
 }
 
 export async function consumeTurnStream(
-  stream: AsyncIterable<unknown>,
+  stream: TrueForgeTurnStream,
   inputCheckpoint: TurnCheckpoint,
   persist: (checkpoint: TurnCheckpoint) => Promise<void>,
   onEvent: (event: z.infer<typeof TurnEventSchema>) => Promise<void> = async () => undefined,
 ): Promise<TurnCheckpoint> {
   let checkpoint = TurnCheckpointSchema.parse(inputCheckpoint);
   let consumed = 0;
-  for await (const inputEvent of stream) {
+  for await (const inputEvent of stream.withMetadata()) {
     consumed += 1;
     if (consumed > MaximumTurnEvents) {
       throw new Error("TrueForge turn stream exceeds the event limit");
     }
-    const event = TurnEventSchema.parse(inputEvent);
+    const streamEvent = StreamEventSchema.parse(inputEvent);
+    const sequenceNumber = Number(streamEvent.id);
+    if (
+      !Number.isSafeInteger(sequenceNumber) ||
+      sequenceNumber !== checkpoint.lastSequenceNumber + 1
+    ) {
+      throw new Error("TrueForge turn stream sequence is not contiguous");
+    }
+    const event = TurnEventSchema.parse(streamEvent.data);
+    await onEvent(event);
     checkpoint = TurnCheckpointSchema.parse({
       ...checkpoint,
-      lastSequenceNumber: checkpoint.lastSequenceNumber + 1,
+      lastSequenceNumber: sequenceNumber,
     });
     await persist(checkpoint);
-    await onEvent(event);
   }
   return checkpoint;
 }

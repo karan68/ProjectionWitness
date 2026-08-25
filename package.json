@@ -42,6 +42,7 @@
     "trueforge:reconnect": "tsx scripts/reconnect-agent-turn.ts",
     "trueforge:register": "tsx scripts/register-agent.ts",
     "trueforge:run": "tsx scripts/run-agent-turn.ts",
+    "trueforge:verify-approved-repair": "tsx scripts/verify-trueforge-approved-repair.ts",
     "trueforge:verify-read-smoke": "tsx scripts/verify-trueforge-read-smoke.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
@@ -60,7 +61,6 @@
     "express": "5.2.1",
     "fastify": "5.12.1",
     "pg": "8.23.0",
-    "projection-witness": "file:",
     "zod": "4.4.3"
   },
   "devDependencies": {

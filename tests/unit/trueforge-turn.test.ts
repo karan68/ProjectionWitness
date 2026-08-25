@@ -1,5 +1,6 @@
 import {
   consumeTurnStream,
+  collectPersistedTurnEvents,
   readTurnCheckpoint,
   reconnectTurn,
   startTurn,
@@ -25,6 +26,23 @@ async function* events(...types: string[]) {
   }
 }
 
+function turnStream(startSequenceNumber: number, ...types: string[]) {
+  return {
+    async *[Symbol.asyncIterator]() {
+      for (const type of types) {
+        yield { type };
+      }
+    },
+    async *withMetadata() {
+      let sequenceNumber = startSequenceNumber;
+      for (const type of types) {
+        yield { data: { type }, id: String(sequenceNumber) };
+        sequenceNumber += 1;
+      }
+    },
+  };
+}
+
 afterEach(async () => {
   await Promise.all(
     temporaryDirectories.splice(0).map((directory) => rm(directory, { recursive: true })),
@@ -47,7 +65,7 @@ describe("TrueForge turn reconnect", () => {
     });
     const onEvent = vi.fn(async () => undefined);
     const result = await consumeTurnStream(
-      events("turn.created", "model.message", "turn.done"),
+      turnStream(1, "turn.created", "model.message", "turn.done"),
       { sessionId: "session-1", turnId: "turn-1", lastSequenceNumber: 0 },
       persist,
       onEvent,
@@ -59,7 +77,7 @@ describe("TrueForge turn reconnect", () => {
   });
 
   it("creates one identified turn before subscribing from cursor zero", async () => {
-    const subscribeToTurn = vi.fn(async () => events("turn.created", "turn.done"));
+    const subscribeToTurn = vi.fn(async () => turnStream(1, "turn.created", "turn.done"));
     const client = {
       sessions: {
         create: vi.fn(async () => ({ data: { id: "session-1" } })),
@@ -92,7 +110,7 @@ describe("TrueForge turn reconnect", () => {
   });
 
   it("resubscribes to a running turn after the exclusive saved cursor", async () => {
-    const subscribeToTurn = vi.fn(async () => events("model.message", "turn.done"));
+    const subscribeToTurn = vi.fn(async () => turnStream(8, "model.message", "turn.done"));
     const listTurnEvents = vi.fn(async () => events());
     const client = {
       sessions: {
@@ -115,8 +133,34 @@ describe("TrueForge turn reconnect", () => {
     expect(listTurnEvents).not.toHaveBeenCalled();
   });
 
+  it("refuses a missing or synthetic SSE sequence instead of advancing the checkpoint", async () => {
+    const persist = vi.fn(async () => undefined);
+    await expect(
+      consumeTurnStream(
+        turnStream(9, "model.message"),
+        { sessionId: "session-1", turnId: "turn-1", lastSequenceNumber: 7 },
+        persist,
+      ),
+    ).rejects.toThrow(/sequence is not contiguous/);
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("collects persisted events beyond the first API page through async iteration", async () => {
+    const page = {
+      async *[Symbol.asyncIterator]() {
+        for (let index = 1; index <= 101; index += 1) {
+          yield { type: index === 101 ? "tool.approval_required" : "model.message" };
+        }
+      },
+    };
+
+    const collected = await collectPersistedTurnEvents(page);
+    expect(collected).toHaveLength(101);
+    expect(collected.at(-1)).toMatchObject({ type: "tool.approval_required" });
+  });
+
   it("rebuilds a completed turn from persisted events without subscribing or creating a turn", async () => {
-    const subscribeToTurn = vi.fn(async () => events());
+    const subscribeToTurn = vi.fn(async () => turnStream(1));
     const listTurnEvents = vi.fn(async () => events("turn.created", "model.message", "turn.done"));
     const client = {
       sessions: {

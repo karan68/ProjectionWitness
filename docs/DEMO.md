@@ -111,7 +111,7 @@ public API state. The repository verifier separately confirmed:
 This is real native denial and zero-mutation evidence. It is not claimed as human approval or a
 successful repair.
 
-## Pending Human Approval
+## Successful Human Approval
 
 A fresh one-hour plan `964b91bc-3329-46cf-bb19-bf2cb67f22cd` was staged after the denial. Its
 TrueForge session is `01m0x8gvx485c79ng8v0j1p8qa`, approval turn is
@@ -124,9 +124,31 @@ The native UI is open at:
 http://127.0.0.1:8790/sessions/01m0x8gvx485c79ng8v0j1p8qa
 ```
 
-It displays the exact plan binding, one-row blast radius, zero-write stale refusal, and untouched
-`Allow`/`Deny` controls. The decision is intentionally left to the operator. Until an operator
-selects `Allow`, no successful apply is claimed.
+The operator selected `Allow`. TrueForge persisted a child turn with
+`user.tool_approval { status: "allow" }` for exact call `call_1435401` before the write response.
+The write connector returned:
+
+- Status: `APPLIED`
+- Audit ID: `240d754c-9dba-4591-895b-6b1c7fd6a391`
+- Receipt SHA-256: `1ff27877d3804a20cf4094c0667cfac9f2cb80c84f35f64d2cbba90dde7ffc66`
+
+Persisted post-write tool responses independently reported `planStatus=APPLIED`, the same audit
+receipt, `rowMatchesAudit=true`, HTTP 200, and public `paymentStatus=PAID` at stream version `2`.
+The repository verifier separately confirmed row version `2`, database status `PAID`, and public
+status `PAID`.
+
+The model's final prose generation then hit Gemini HTTP 429 after these verification responses.
+That quota error did not affect the already committed transaction or its persisted evidence. The
+17-event chain passes the executable verifier:
+
+```powershell
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run trueforge:verify-approved-repair -- `
+  01m0x8gvx485c79ng8v0j1p8qa `
+  964b91bc-3329-46cf-bb19-bf2cb67f22cd `
+  ORD-1042 `
+  call_1435401 `
+  1ff27877d3804a20cf4094c0667cfac9f2cb80c84f35f64d2cbba90dde7ffc66
+```
 
 ## Honest Limitations
 
@@ -134,6 +156,10 @@ selects `Allow`, no successful apply is claimed.
   the WSL checkout. The approval turn created a real Daytona sandbox for its Git skill, but this
   run does not claim the reducer itself executed in Daytona.
 - The real reconnect proof currently covers rebuilding a completed turn. Running-turn reconnect
-  remains a deterministic contract test, not a recorded live demo.
+  uses actual TrueForge SSE IDs and remains a deterministic contract test, not a recorded live
+  demo.
+- The live successful plan was not invoked a second time because a second direct write-tool call
+  would require a separate native approval. Stable `ALREADY_APPLIED` receipt reuse remains covered
+  by PostgreSQL integration tests.
 - Standalone local TrueForge correlation IDs are audit correlation data, not authenticated human
   identity.

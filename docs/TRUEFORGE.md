@@ -67,9 +67,10 @@ before subscription:
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run trueforge:run -- "Investigate order ORD-..."
 ```
 
-The client atomically stores `sessionId`, `turnId`, and the last observed sequence number under
-`.projection-witness/`. It persists the next exclusive cursor before reporting each event. It does
-not approve tools. When a native approval event appears, it reloads persisted turn events and
+The client atomically stores `sessionId`, `turnId`, and the last observed server SSE sequence
+under `.projection-witness/`. It handles each event, then persists the SDK metadata `id` as the
+next exclusive cursor, refusing missing, unsafe, or noncontiguous IDs. It does not approve tools.
+When a native approval event appears, it reloads every persisted event page and
 proves that the event references one `apply_projection_repair` call on the write connector with a
 schema-valid evidence binding.
 
@@ -114,7 +115,8 @@ The event verifier can be rerun while the local TrueForge store is available:
   MISSING-TRUEFORGE-SMOKE
 ```
 
-A persisted native approval/denial event and an apply attempt are not yet claimed.
+The later approval demo persisted both native denial and allow decisions. See
+[DEMO.md](DEMO.md) for the exact plan, call, audit, and post-write evidence.
 
 ## Daytona smoke evidence
 

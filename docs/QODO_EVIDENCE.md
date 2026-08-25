@@ -22,6 +22,10 @@ configuration alone are not represented as review evidence.
 | [3](https://github.com/karan68/ProjectionWitness/pull/3) | Naive projector, API read, deterministic gap reproducer, and reliability gate | Eight findings on `efabb2a`; corrections committed in `27b979c` | Accepted and fixed; final persistent review remains visible on the PR |
 | [4](https://github.com/karan68/ProjectionWitness/pull/4) | Gap-aware projector and runtime attestation | Multiple exact-head rounds found bigint bounds, path validation, publication races, source disclosure, execution bounds, and determinism gaps | Accepted and fixed through reviewed head `8451e23`; merged as `d6bb9cc` |
 | [5](https://github.com/karan68/ProjectionWitness/pull/5) | Canonical evidence and reducer provenance | Review found artifact TOCTOU, unbounded execution/text, forgeable tool output, unbound provenance, pagination, and fresh-module replay gaps | Accepted and fixed through reviewed head `6e145f1`; merged as `0373a2f` |
+| [6](https://github.com/karan68/ProjectionWitness/pull/6) | Evidence-bound transactional repair | Review found timestamp normalization, unattested staging, receipt lock ordering, unsafe cents, and over-broad write privileges | Accepted and fixed through `93605aa`; merged as `ea82bbd` |
+| [7](https://github.com/karan68/ProjectionWitness/pull/7) | Role-separated MCP connectors | Review found cross-order verification and mixed PostgreSQL statement snapshots | Accepted and fixed through `e2da192`; merged as `4734413` |
+| [8](https://github.com/karan68/ProjectionWitness/pull/8) | Approval-gated TrueForge saved agent | Review found approval verification parsing unrelated parallel sibling calls as apply calls | Accepted and fixed on the reviewed stack before merge |
+| [9](https://github.com/karan68/ProjectionWitness/pull/9) | Approval-bound end-to-end demo | Review found synthetic reconnect cursors and alleged first-page-only approval history | Cursor accepted and fixed with real SSE IDs; pagination finding disproved against pinned SDK automatic page iteration and a 101-event regression |
 
 ### PR 1 findings
 
@@ -68,6 +72,25 @@ returned by the verified artifact runner.
 The final PR 5 summary carried an `Artifact size check races` item after the code had moved to one
 `O_NOFOLLOW` file handle with pre-read `fstat` and a post-read byte-length check. Exact-head CI was
 green and no current inline thread remained; this was treated as an evidence-backed disagreement.
+
+### PR 6 through PR 9 findings
+
+The transactional repair reviews forced authoritative reducer execution before plan staging,
+canonical timestamp and money bounds, early receipt reuse, and a split between agent-facing plan
+staging and an internal least-privilege repair executor. The MCP reviews made the persisted plan's
+stream ID authoritative and moved plan, audit, and row reads into one read-only repeatable-read
+snapshot.
+
+The TrueForge review corrected approval verification so it selects the referenced tool-call ID
+before validating only that call as the write-side apply tool; unrelated parallel read calls are
+permitted. The demo review replaced synthetic event counts with the pinned SDK's actual SSE
+metadata IDs and now refuses missing, unsafe, or noncontiguous cursors.
+
+The PR 9 `Approval history truncates` finding was investigated and rejected. In SDK `0.1.3`,
+`listTurnEvents` returns `core.Page`, whose async iterator calls `getNextPage()` until
+`hasNextPage()` is false. `collectPersistedTurnEvents` consumes that iterator and independently
+caps the aggregate at 10,000 events. A focused 101-event regression proves an approval after the
+first API page is collected.
 
 For every PR, record the URL, reviewed commit, findings, fixes, and evidence-backed disagreements
 before merge.
