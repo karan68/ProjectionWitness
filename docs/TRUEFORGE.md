@@ -34,6 +34,59 @@ development only and must not be exposed because this standalone instance has no
 Provider and model keys were entered directly into TrueForge settings. They are not project
 environment variables and are not committed. Settings API responses redact both credentials.
 
+## Projection Witness saved agent
+
+The checked-in `agents/projection-witness.agent.json` uses the pinned SDK's API field names. It
+enables the Daytona sandbox, file downloads, user questions, generative UI, and one-level dynamic
+subagents. The read MCP connector exposes the seven investigation, staging, and verification tools
+without approval. The write connector exposes only `apply_projection_repair` and requires native
+approval for that literal tool.
+
+Registration is an idempotent API operation. It upserts both MCP connector settings and the public
+Git skill at an exact 40-character commit, asks TrueForge for each live connector's tool list, and
+refuses to save the agent if either list differs from the repository contract. It then creates the
+named agent or updates its manifest by immutable agent ID.
+
+With the MCP servers reachable from TrueForge, register the exact public commit:
+
+```powershell
+$env:TRUEFORGE_MCP_READ_URL = "http://<reachable-host>:8781/mcp"
+$env:TRUEFORGE_MCP_WRITE_URL = "http://<reachable-host>:8782/mcp"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run trueforge:register -- <40-char-commit>
+```
+
+The registration script has no provider, Daytona, database, or GitHub credential input. Those
+credentials remain in their owning systems.
+
+## Turn and reconnect client
+
+Start a saved-agent turn without streaming so the immutable turn ID is known and checkpointed
+before subscription:
+
+```powershell
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run trueforge:run -- "Investigate order ORD-..."
+```
+
+The client atomically stores `sessionId`, `turnId`, and the last observed sequence number under
+`.projection-witness/`. It persists the next exclusive cursor before reporting each event. It does
+not approve tools. When a native approval event appears, it reloads persisted turn events and
+proves that the event references one `apply_projection_repair` call on the write connector with a
+schema-valid evidence binding.
+
+After deliberately stopping only the client, reconnect with:
+
+```powershell
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run trueforge:reconnect
+```
+
+Reconnect first calls `getTurn`. A running turn is subscribed with the saved exclusive
+`afterSequenceNumber`; a completed/cancelled/error turn is rebuilt from bounded persisted events.
+The reconnect path has no create-turn method and cannot silently replace the original work.
+
+The saved-agent manifest, registration behavior, approval binding, atomic checkpoint, and both
+reconnect branches are covered by deterministic unit tests. Real connector registration and a
+persisted native approval event are not claimed until the credentialed run is recorded below.
+
 ## Daytona smoke evidence
 
 A saved sandbox-enabled smoke agent executed through the TrueForge session and turn APIs. The

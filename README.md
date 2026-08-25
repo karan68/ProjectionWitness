@@ -105,7 +105,10 @@ apply runs through the internal executor identity.
 
 See [docs/MCP_CONNECTORS.md](docs/MCP_CONNECTORS.md) for the exact tool surfaces, database roles,
 limits, startup command, and official-client smoke test. Native TrueForge approval wiring remains
-follow-up work.
+follow-up work. The checked-in TrueForge manifest, projection repair sandbox skill, idempotent
+registration client, approval-event verifier, and sequence-based reconnect client are documented
+in [docs/TRUEFORGE.md](docs/TRUEFORGE.md); their deterministic contract tests pass, while a real
+native approval run is not yet claimed.
 
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
