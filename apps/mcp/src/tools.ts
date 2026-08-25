@@ -5,7 +5,7 @@ import {
   RepairError,
   type ApplyProjectionRepairInput,
 } from "@projection-witness/repair";
-import type { Pool } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 import {
   ApplyRepairInputSchema,
@@ -68,6 +68,14 @@ async function readResponseText(response: Response): Promise<string> {
     reader.releaseLock();
   }
   return Buffer.concat(chunks, receivedBytes).toString("utf8");
+}
+
+async function rollbackReadTransaction(client: PoolClient): Promise<void> {
+  try {
+    await client.query("ROLLBACK");
+  } catch {
+    // Preserve the original verification failure.
+  }
 }
 
 export interface ProjectionWitnessToolsOptions {
@@ -295,32 +303,43 @@ export class ProjectionWitnessTools {
 
   async verifyProjectionRepair(input: unknown) {
     const { planId } = VerifyRepairInputSchema.parse(input);
-    const plan = await this.readPool.query<{ status: string; stream_id: string }>(
-      "SELECT status, stream_id FROM projection_repair_plans WHERE plan_id = $1",
-      [planId],
-    );
-    const planRow = plan.rows[0];
-    if (planRow === undefined) {
-      throw new ToolFailure("CASE_NOT_FOUND", "Repair plan was not found");
-    }
-    const orderId = planRow.stream_id;
-    const [audit, row, publicState] = await Promise.all([
-      this.readPool.query<{ receipt_sha256: string; after_row_sha256: string }>(
+    const client = await this.readPool.connect();
+    let planRow: { status: string; stream_id: string };
+    let auditRow: { receipt_sha256: string; after_row_sha256: string } | undefined;
+    let projectionRow: ProjectionRow | undefined;
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const plan = await client.query<{ status: string; stream_id: string }>(
+        "SELECT status, stream_id FROM projection_repair_plans WHERE plan_id = $1",
+        [planId],
+      );
+      const persistedPlan = plan.rows[0];
+      if (persistedPlan === undefined) {
+        throw new ToolFailure("CASE_NOT_FOUND", "Repair plan was not found");
+      }
+      planRow = persistedPlan;
+      const audit = await client.query<{ receipt_sha256: string; after_row_sha256: string }>(
         `SELECT receipt_sha256, after_row_sha256
          FROM projection_repair_audit WHERE plan_id = $1`,
         [planId],
-      ),
-      this.readPool.query<ProjectionRow>(
+      );
+      const row = await client.query<ProjectionRow>(
         `SELECT
            order_id, total_cents::text, paid_cents::text, payment_status,
            fulfillment_status, last_stream_version, row_version::text
          FROM order_view WHERE order_id = $1`,
-        [orderId],
-      ),
-      this.getPublicOrderState({ orderId }),
-    ]);
-    const auditRow = audit.rows[0];
-    const projectionRow = row.rows[0];
+        [planRow.stream_id],
+      );
+      auditRow = audit.rows[0];
+      projectionRow = row.rows[0];
+      await client.query("COMMIT");
+    } catch (error) {
+      await rollbackReadTransaction(client);
+      throw error;
+    } finally {
+      client.release();
+    }
+    const publicState = await this.getPublicOrderState({ orderId: planRow.stream_id });
     let rowMatchesAudit: boolean | null = null;
     if (auditRow !== undefined && projectionRow !== undefined) {
       const { rowVersion: _rowVersion, ...business } = canonicalRow(projectionRow);

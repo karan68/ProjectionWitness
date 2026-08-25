@@ -24,8 +24,10 @@ non-destructive but persists an immutable prepared plan after authoritative evid
 revalidation.
 
 `verify_projection_repair` accepts only a plan ID. It resolves the authoritative order ID from
-the persisted plan and uses that same ID for the projection row and public API reads, so a caller
-cannot combine plan/audit evidence for one order with verification state from another.
+the persisted plan and uses that same ID for the projection row and public API reads. Plan status,
+audit, and row are read in one read-only repeatable-read transaction, so verification observes the
+database either entirely before or entirely after a concurrent apply. A caller cannot combine
+plan/audit evidence for one order with verification state from another.
 
 ## Database Identities
 
