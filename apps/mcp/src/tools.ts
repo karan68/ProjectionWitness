@@ -1,4 +1,4 @@
-import { OrderEventStore, getProjectionRuntime } from "@projection-witness/database";
+import { getProjectionRuntime, loadOrderStream } from "@projection-witness/database";
 import { fingerprintCandidateProjection, snapshotEventStream } from "@projection-witness/evidence";
 import {
   type ProjectionRepairService,
@@ -200,57 +200,74 @@ export class ProjectionWitnessTools {
 
   async snapshotEventStream(input: unknown) {
     const { streamId, maxEvents, maxCanonicalBytes } = SnapshotStreamInputSchema.parse(input);
-    const head = await this.readPool.query<{ version: number }>(
-      "SELECT version FROM event_streams WHERE stream_id = $1",
-      [streamId],
-    );
-    const version = head.rows[0]?.version;
-    if (version === undefined) {
-      throw new ToolFailure("CASE_NOT_FOUND", "Event stream was not found");
+    const client = await this.readPool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+      const head = await client.query<{ version: number }>(
+        "SELECT version FROM event_streams WHERE stream_id = $1",
+        [streamId],
+      );
+      const version = head.rows[0]?.version;
+      if (version === undefined) {
+        throw new ToolFailure("CASE_NOT_FOUND", "Event stream was not found");
+      }
+      if (version > maxEvents) {
+        throw new ToolFailure("INVALID_EVENT_STREAM", "Event stream exceeds the count limit");
+      }
+      const metrics = await client.query<{ event_count: string; raw_bytes: string }>(
+        `WITH bounded AS (
+           SELECT event_id, global_position, stream_id, stream_version,
+                  event_type, payload, metadata, recorded_at
+           FROM events
+           WHERE stream_id = $1
+           ORDER BY stream_version
+           LIMIT $2
+         )
+         SELECT
+           count(*)::text AS event_count,
+           COALESCE(sum(
+             octet_length(event_id::text)
+             + octet_length(global_position::text)
+             + octet_length(stream_id)
+             + octet_length(stream_version::text)
+             + octet_length(event_type)
+             + octet_length(payload::text)
+             + octet_length(metadata::text)
+             + octet_length(recorded_at::text)
+           ), 0)::text AS raw_bytes
+         FROM bounded`,
+        [streamId, maxEvents + 1],
+      );
+      const metric = metrics.rows[0];
+      if (metric === undefined || Number(metric.event_count) > maxEvents) {
+        throw new ToolFailure("INVALID_EVENT_STREAM", "Event stream exceeds the count limit");
+      }
+      if (BigInt(metric.raw_bytes) > BigInt(maxCanonicalBytes)) {
+        throw new ToolFailure("INVALID_EVENT_STREAM", "Event stream exceeds the byte limit");
+      }
+      const events = await loadOrderStream(client, streamId, maxEvents + 1);
+      if (events.length > maxEvents) {
+        throw new ToolFailure("INVALID_EVENT_STREAM", "Event stream exceeds the count limit");
+      }
+      const snapshot = snapshotEventStream({
+        streamId,
+        headVersion: version,
+        events,
+        maxEvents,
+        maxCanonicalBytes,
+      });
+      await client.query("COMMIT");
+      return SnapshotOutputSchema.parse(snapshot);
+    } catch (error) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        // Preserve the original snapshot failure.
+      }
+      throw error;
+    } finally {
+      client.release();
     }
-    if (version > maxEvents) {
-      throw new ToolFailure("INVALID_EVENT_STREAM", "Event stream exceeds the count limit");
-    }
-    const metrics = await this.readPool.query<{ event_count: string; raw_bytes: string }>(
-      `WITH bounded AS (
-         SELECT event_id, global_position, stream_id, stream_version,
-                event_type, payload, metadata, recorded_at
-         FROM events
-         WHERE stream_id = $1
-         ORDER BY stream_version
-         LIMIT $2
-       )
-       SELECT
-         count(*)::text AS event_count,
-         COALESCE(sum(
-           octet_length(event_id::text)
-           + octet_length(global_position::text)
-           + octet_length(stream_id)
-           + octet_length(stream_version::text)
-           + octet_length(event_type)
-           + octet_length(payload::text)
-           + octet_length(metadata::text)
-           + octet_length(recorded_at::text)
-         ), 0)::text AS raw_bytes
-       FROM bounded`,
-      [streamId, maxEvents + 1],
-    );
-    const metric = metrics.rows[0];
-    if (metric === undefined || Number(metric.event_count) > maxEvents) {
-      throw new ToolFailure("INVALID_EVENT_STREAM", "Event stream exceeds the count limit");
-    }
-    if (BigInt(metric.raw_bytes) > BigInt(maxCanonicalBytes)) {
-      throw new ToolFailure("INVALID_EVENT_STREAM", "Event stream exceeds the byte limit");
-    }
-    const events = await new OrderEventStore(this.readPool).loadStream(streamId);
-    const snapshot = snapshotEventStream({
-      streamId,
-      headVersion: version,
-      events,
-      maxEvents,
-      maxCanonicalBytes,
-    });
-    return SnapshotOutputSchema.parse(snapshot);
   }
 
   async getProjectionRuntime(input: unknown) {
