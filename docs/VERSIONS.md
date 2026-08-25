@@ -7,11 +7,16 @@ Last verified: 2026-08-25
 | Component | Exact version or digest | Evidence |
 |---|---|---|
 | Project Node.js | `22.23.2` | Official Windows x64 archive executed locally |
-| Project npm | `10.9.8` | Bundled with Node.js 22.23.2 and executed locally |
+| Project npm | `10.9.9` | Exact npm package installed and executed with Node.js 22.23.2 |
+| npm bundled `tar` | `7.5.22` | Inspected at `npm/node_modules/tar/package.json`; fixes CVE-2026-59873 |
 | Node Windows archive | `sha256:1177b4137ba5adaa56354ae40f1080c7450e8ae09cecb47da459d1c52ac99f97` | Matched the official Node.js `SHASUMS256.txt` |
 | WSL distribution | Ubuntu 26.04 LTS | `wsl -d Ubuntu -- cat /etc/os-release` |
-| WSL Node.js | `22.22.1` | `wsl -d Ubuntu -- node --version` |
-| WSL npm | `11.16.0` | `wsl -d Ubuntu -- npm --version` |
+| TrueForge WSL Node.js | `22.23.2` | Native Linux executable used by the running server |
+| TrueForge server | `0.1.4` | Exact `npx` package; `/healthz` returned HTTP 200 |
+| TrueForge smoke model | `google-gemini/gemini-3-6-flash` | Saved agent completed real sandbox turns |
+| Daytona provider | `ready` on 2026-08-25 | Redacted TrueForge settings API and `sandbox.created` event |
+| Daytona Node bootstrap | `22.23.2` | Official Linux x64 archive hash verified before execution |
+| Daytona Node archive | `sha256:b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a` | Matched official Node.js `SHASUMS256.txt` |
 | Docker Engine | `29.6.2` | WSL client and server both verified |
 | Docker Compose | `5.3.1` | WSL Compose plugin verified |
 | PostgreSQL image | `postgres:18.6-bookworm` | Docker Official Image tag verified |
@@ -40,13 +45,12 @@ was verified with `POSTGRES_PORT=55432`. CI retains the contract default `5432`.
 
 `package-lock.json` is the transitive dependency authority.
 
-## Pending credentialed verification
+## Remaining verification
 
-The following values remain intentionally unset until real executions occur:
+The following values remain intentionally unset until their producing implementation exists:
 
-- TrueForge model provider and exact model FQN.
-- Daytona snapshot/provider configuration and verification date.
-- TrueForge launch command proven from WSL.
 - Reducer artifact digest and source commit SHA.
+- Final saved-agent model FQN after deterministic agent evaluation. The smoke model above is not
+	yet represented as the submission model.
 
-These are setup gates. They must not be replaced with mocked evidence.
+These are implementation gates. They must not be replaced with mocked evidence.

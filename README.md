@@ -14,7 +14,7 @@ gates in [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) pass.
 
 ## Prerequisites
 
-- Node.js `22.23.2` with npm `10.9.8`.
+- Node.js `22.23.2` with npm `10.9.9` installed over the bundled npm release.
 - Docker Engine with Compose support.
 - On this Windows host, Docker runs in the `Ubuntu` WSL2 distribution.
 
@@ -54,7 +54,9 @@ The reset command refuses `NODE_ENV=production` and requires the exact confirmat
 - No write when stream, runtime, row, candidate, plan, or expiry evidence is stale.
 
 See [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) for the complete contract and
-[docs/VERSIONS.md](docs/VERSIONS.md) for verified pins and unresolved credentialed gates.
+[docs/VERSIONS.md](docs/VERSIONS.md) for verified pins,
+[docs/TRUEFORGE.md](docs/TRUEFORGE.md) for the tested harness path, and
+[docs/QODO_EVIDENCE.md](docs/QODO_EVIDENCE.md) for review history.
 
 ## License
 
