@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { readFile, stat } from "node:fs/promises";
+import { constants } from "node:fs";
+import { open, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
 import { ApprovedOrderReducerSha256 } from "@projection-witness/projector";
@@ -239,11 +240,20 @@ export async function runReducerArtifactEvidence(
     throw new Error("Reducer artifact digest is not approved by this build");
   }
   const artifactPath = resolve(artifactPathInput);
-  const artifactStats = await stat(artifactPath);
-  if (!artifactStats.isFile() || artifactStats.size > MaximumReducerArtifactBytes) {
-    throw new Error("Reducer artifact must be a file no larger than 1048576 bytes");
+  const artifactFile = await open(artifactPath, constants.O_RDONLY | constants.O_NOFOLLOW);
+  let artifactBytes: Buffer;
+  try {
+    const artifactStats = await artifactFile.stat();
+    if (!artifactStats.isFile() || artifactStats.size > MaximumReducerArtifactBytes) {
+      throw new Error("Reducer artifact must be a file no larger than 1048576 bytes");
+    }
+    artifactBytes = await artifactFile.readFile();
+    if (artifactBytes.byteLength > MaximumReducerArtifactBytes) {
+      throw new Error("Reducer artifact must be a file no larger than 1048576 bytes");
+    }
+  } finally {
+    await artifactFile.close();
   }
-  const artifactBytes = await readFile(artifactPath);
   const reducerSha256 = createHash("sha256").update(artifactBytes).digest("hex");
   if (reducerSha256 !== parsed.expectedReducerSha256) {
     throw new Error("Reducer artifact digest does not match runtime attestation");
