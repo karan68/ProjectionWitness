@@ -272,29 +272,32 @@ export function verifyApplyApprovalBinding(events: readonly unknown[], approvalI
   if (message.threadId !== approval.threadId) {
     throw new Error("Approval and tool call thread identifiers do not match");
   }
-  const call = message.toolCalls
-    .map((toolCall) =>
-      z
-        .object({
-          id: z.string().min(1).max(256),
-          function: z
-            .object({ arguments: z.string().max(131_072), name: z.string().min(1).max(512) })
-            .strict(),
-          toolInfo: z
-            .object({
-              type: z.literal("mcp"),
-              serverName: z.literal("projection-witness-write"),
-              name: z.literal("apply_projection_repair"),
-            })
-            .passthrough(),
-        })
-        .passthrough()
-        .parse(toolCall),
-    )
-    .find((toolCall) => toolCall.id === reference.id);
-  if (call === undefined) {
+  const referencedCall = message.toolCalls.find((toolCall) => {
+    const parsed = z
+      .object({ id: z.string().min(1).max(256) })
+      .passthrough()
+      .safeParse(toolCall);
+    return parsed.success && parsed.data.id === reference.id;
+  });
+  if (referencedCall === undefined) {
     throw new Error("Approval does not reference the expected write MCP tool call");
   }
+  const call = z
+    .object({
+      id: z.string().min(1).max(256),
+      function: z
+        .object({ arguments: z.string().max(131_072), name: z.string().min(1).max(512) })
+        .strict(),
+      toolInfo: z
+        .object({
+          type: z.literal("mcp"),
+          serverName: z.literal("projection-witness-write"),
+          name: z.literal("apply_projection_repair"),
+        })
+        .passthrough(),
+    })
+    .passthrough()
+    .parse(referencedCall);
   return {
     threadId: approval.threadId,
     toolCallId: call.id,
