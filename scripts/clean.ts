@@ -20,5 +20,6 @@ async function removeWorkspaceOutputs(parent: string): Promise<void> {
 await Promise.all([
   removeWorkspaceOutputs("apps"),
   removeWorkspaceOutputs("packages"),
+  rm("artifacts", { recursive: true, force: true }),
   rm("tsconfig.tsbuildinfo", { force: true }),
 ]);
