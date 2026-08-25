@@ -9,6 +9,17 @@ export {
 export { migrateDatabase, type MigrationResult } from "./migrations.js";
 export { createDatabasePool, type DatabasePoolOptions } from "./pool.js";
 export {
+  assertRepairSafeProjectionRuntime,
+  GapAwareAlgorithmVersion,
+  getProjectionRuntime,
+  ProjectionRuntimeSafetyError,
+  registerProjectionRuntime,
+  TrackedNonBlockingGapStrategy,
+  type ProjectionRuntime,
+  type ProjectionRuntimeManifest,
+  type ProjectionRuntimeSafetyCode,
+} from "./projection-runtime.js";
+export {
   provisionRuntimeRoles,
   type ProvisionRuntimeRolesInput,
   type RuntimeRole,

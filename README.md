@@ -64,6 +64,16 @@ position 4 first, and advances naive projector v1 to checkpoint 4. The API remai
 See [docs/GAP_REPRODUCTION.md](docs/GAP_REPRODUCTION.md) for the mechanism, ablation, safety
 guard, and exact expected evidence.
 
+## Gap-aware runtime
+
+Projector v2 records newly observed missing global positions, continues unrelated streams, and
+rechecks tracked positions on later polls. It registers a locked runtime manifest containing its
+generation, source commit, algorithm, gap strategy, and the SHA-256 of the reducer module it
+actually loads. It intentionally cannot discover a historical position already skipped by v1.
+
+See [docs/GAP_AWARE_PROJECTOR.md](docs/GAP_AWARE_PROJECTOR.md) for the algorithm, explicit
+permanent-hole retirement policy, runtime refusal contract, startup command, and PostgreSQL proof.
+
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
 open during development:
