@@ -54,12 +54,12 @@ return `ALREADY_APPLIED` without waiting on runtime or stream locks.
 
 ## Database Boundary
 
-`pw_mcp_write` can lock runtime and stream rows through narrow key-column update privileges, but
-defensive triggers reject actual updates to those tables by that role. It has no direct
-`order_view` update privilege. Security-definer routines expose only one-row locking and a
-plan-bound row-version CAS; the CAS derives all candidate fields from the prepared plan and refuses
-to run until the same transaction has inserted its audit row. It can insert plans/audits and
-complete a plan subject to the evidence and audit triggers.
+`pw_mcp_write` is agent-facing and can validate/read live evidence plus insert a prepared plan. It
+cannot update plans, runtime/stream lock rows, projection rows, or audit rows. Apply uses a separate
+non-agent-facing `pw_repair_executor` pool. That identity can take the fixed lock sequence, update
+only typed projection fields (never `order_id`), insert one audit, and complete a plan. Defensive
+triggers reject its attempts to mutate runtime or stream rows. Compromise of the public MCP write
+credential therefore does not grant a projection mutation path.
 `pw_mcp_read` can inspect plans and audits but cannot mutate them. Audit updates and deletes are
 rejected even for the schema owner.
 

@@ -53,9 +53,15 @@ const apiUrl = environmentVariable("DATABASE_URL_API") ?? "";
 const projectorUrl = environmentVariable("DATABASE_URL_PROJECTOR") ?? "";
 const mcpReadUrl = environmentVariable("DATABASE_URL_MCP_READ") ?? "";
 const mcpWriteUrl = environmentVariable("DATABASE_URL_MCP_WRITE") ?? "";
-const describeWithDatabase = [migratorUrl, apiUrl, projectorUrl, mcpReadUrl, mcpWriteUrl].some(
-  (value) => value === "",
-)
+const repairExecutorUrl = environmentVariable("DATABASE_URL_REPAIR_EXECUTOR") ?? "";
+const describeWithDatabase = [
+  migratorUrl,
+  apiUrl,
+  projectorUrl,
+  mcpReadUrl,
+  mcpWriteUrl,
+  repairExecutorUrl,
+].some((value) => value === "")
   ? describe.skip
   : describe;
 
@@ -72,6 +78,7 @@ describeWithDatabase("transactional projection repair", () => {
   let projectorPool: Pool;
   let mcpReadPool: Pool;
   let mcpWritePool: Pool;
+  let repairExecutorPool: Pool;
   let apiStore: OrderEventStore;
   let readStore: OrderEventStore;
   let reducerBundle: ReducerBundleResult;
@@ -102,6 +109,11 @@ describeWithDatabase("transactional projection repair", () => {
       applicationName: "projection-witness-repair-write-test",
       maxConnections: 8,
     });
+    repairExecutorPool = createDatabasePool({
+      databaseUrl: repairExecutorUrl,
+      applicationName: "projection-witness-repair-executor-test",
+      maxConnections: 8,
+    });
     await migrateDatabase(migratorPool);
     apiStore = new OrderEventStore(apiPool);
     readStore = new OrderEventStore(mcpReadPool);
@@ -112,6 +124,7 @@ describeWithDatabase("transactional projection repair", () => {
   afterAll(async () => {
     await Promise.all([
       mcpWritePool.end(),
+      repairExecutorPool.end(),
       mcpReadPool.end(),
       projectorPool.end(),
       apiPool.end(),
@@ -123,6 +136,7 @@ describeWithDatabase("transactional projection repair", () => {
     options: Partial<ConstructorParameters<typeof ProjectionRepairService>[1]> = {},
   ) {
     return new ProjectionRepairService(mcpWritePool, {
+      executorPool: repairExecutorPool,
       reducerArtifactPath: reducerBundle.outputPath,
       ...options,
     });
@@ -480,11 +494,17 @@ describeWithDatabase("transactional projection repair", () => {
         "UPDATE projection_repair_plans SET stream_sha256 = $2 WHERE plan_id = $1",
         [testCase.envelope.planId, "f".repeat(64)],
       ),
-    ).rejects.toMatchObject({ code: "55000" });
+    ).rejects.toMatchObject({ code: "42501" });
     await expect(
       mcpWritePool.query(
         "UPDATE projection_repair_plans SET status = 'APPLIED', applied_at = clock_timestamp() WHERE plan_id = $1",
         [testCase.envelope.planId],
+      ),
+    ).rejects.toMatchObject({ code: "42501" });
+    await expect(
+      repairExecutorPool.query(
+        "UPDATE projection_repair_plans SET stream_sha256 = $2 WHERE plan_id = $1",
+        [testCase.envelope.planId, "f".repeat(64)],
       ),
     ).rejects.toMatchObject({ code: "55000" });
     await expect(
@@ -510,11 +530,11 @@ describeWithDatabase("transactional projection repair", () => {
       ]),
     ).rejects.toMatchObject({ code: "42501" });
     await expect(
-      mcpWritePool.query("SELECT apply_order_view_repair($1::uuid, $2::bigint)", [
-        testCase.envelope.planId,
-        testCase.envelope.currentRow.rowVersion,
+      repairExecutorPool.query("UPDATE order_view SET order_id = $2 WHERE order_id = $1", [
+        testCase.streamId,
+        `EXECUTOR-MOVED-${testCase.streamId}`,
       ]),
-    ).rejects.toMatchObject({ code: "55000" });
+    ).rejects.toMatchObject({ code: "42501" });
     await repair.applyRepairPlan(testCase.approval);
     await expect(
       migratorPool.query(

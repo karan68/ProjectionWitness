@@ -18,6 +18,7 @@ const runtimeUrls: RuntimeRoleUrls = {
   pw_projector: requiredEnvironmentVariable("DATABASE_URL_PROJECTOR"),
   pw_mcp_read: requiredEnvironmentVariable("DATABASE_URL_MCP_READ"),
   pw_mcp_write: requiredEnvironmentVariable("DATABASE_URL_MCP_WRITE"),
+  pw_repair_executor: requiredEnvironmentVariable("DATABASE_URL_REPAIR_EXECUTOR"),
 };
 const pool = createDatabasePool({
   databaseUrl: migratorUrl,

@@ -65,6 +65,7 @@ export type ApplyProjectionRepairInput = z.infer<typeof ApplyProjectionRepairInp
 
 export interface ProjectionRepairOptions {
   reducerArtifactPath: string;
+  executorPool: Pool;
   lockTimeoutMs?: number;
   statementTimeoutMs?: number;
   maxEvents?: number;
@@ -159,6 +160,7 @@ interface BoundedStreamMetricsRow {
 
 interface ResolvedProjectionRepairOptions {
   reducerArtifactPath: string;
+  executorPool: Pool;
   lockTimeoutMs: number;
   statementTimeoutMs: number;
   maxEvents: number;
@@ -355,6 +357,7 @@ export class ProjectionRepairService {
     this.pool = pool;
     this.options = {
       reducerArtifactPath: z.string().trim().min(1).max(512).parse(options.reducerArtifactPath),
+      executorPool: options.executorPool,
       lockTimeoutMs: PositiveIntegerSchema.parse(options.lockTimeoutMs ?? 2_000),
       statementTimeoutMs: PositiveIntegerSchema.parse(options.statementTimeoutMs ?? 5_000),
       maxEvents: PositiveIntegerSchema.parse(options.maxEvents ?? 1_000),
@@ -546,7 +549,7 @@ export class ProjectionRepairService {
       throw new RepairError("PLAN_INVALID", "Repair approval input is invalid");
     }
     const approval = approvalResult.data;
-    const client = await this.pool.connect();
+    const client = await this.options.executorPool.connect();
     try {
       await client.query("BEGIN");
       await client.query("SELECT set_config('lock_timeout', $1, true)", [
@@ -641,7 +644,12 @@ export class ProjectionRepairService {
       }
 
       const rowResult = await client.query<OrderViewRow>(
-        "SELECT * FROM lock_order_view_for_repair($1)",
+        `SELECT
+           order_id, total_cents::text, paid_cents::text, payment_status,
+           fulfillment_status, last_stream_version, row_version::text
+         FROM order_view
+         WHERE order_id = $1
+         FOR UPDATE`,
         [plan.stream_id],
       );
       const currentRow = rowResult.rows[0];
@@ -732,6 +740,31 @@ export class ProjectionRepairService {
       }
 
       const candidate = candidateFingerprint.value;
+      const updateResult = await client.query(
+        `UPDATE order_view
+         SET total_cents = $2::bigint,
+             paid_cents = $3::bigint,
+             payment_status = $4,
+             fulfillment_status = $5,
+             last_stream_version = $6,
+             row_version = row_version + 1,
+             updated_at = clock_timestamp()
+         WHERE order_id = $1
+           AND row_version = $7::bigint`,
+        [
+          plan.stream_id,
+          candidate.totalCents,
+          candidate.paidCents,
+          candidate.paymentStatus,
+          candidate.fulfillmentStatus,
+          candidate.lastStreamVersion,
+          plan.current_row_version,
+        ],
+      );
+      if (updateResult.rowCount !== 1) {
+        throw new RepairError("STALE_PLAN", "Projection compare-and-swap failed", ["row"]);
+      }
+
       await this.options.beforeAuditInsert?.();
       const auditId = z.uuid().parse(this.options.generateAuditId());
       const appliedTime = await client.query<{ applied_at: Date }>(
@@ -788,13 +821,6 @@ export class ProjectionRepairService {
           receiptSha256,
         ],
       );
-      const updateResult = await client.query<{ affected_rows: string }>(
-        `SELECT apply_order_view_repair($1::uuid, $2::bigint)::text AS affected_rows`,
-        [plan.plan_id, plan.current_row_version],
-      );
-      if (updateResult.rows[0]?.affected_rows !== "1") {
-        throw new RepairError("STALE_PLAN", "Projection compare-and-swap failed", ["row"]);
-      }
       const completion = await client.query(
         `UPDATE projection_repair_plans
          SET status = 'APPLIED', applied_at = $2::timestamptz

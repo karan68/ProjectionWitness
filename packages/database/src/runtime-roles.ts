@@ -1,7 +1,13 @@
 import type { Pool, PoolClient } from "pg";
 import { z } from "zod";
 
-const RuntimeRoleSchema = z.enum(["pw_api", "pw_projector", "pw_mcp_read", "pw_mcp_write"]);
+const RuntimeRoleSchema = z.enum([
+  "pw_api",
+  "pw_projector",
+  "pw_mcp_read",
+  "pw_mcp_write",
+  "pw_repair_executor",
+]);
 const PasswordSchema = z.string().min(16).max(1_024);
 
 export type RuntimeRole = z.infer<typeof RuntimeRoleSchema>;
@@ -11,6 +17,7 @@ export interface RuntimeRoleUrls {
   pw_projector: string;
   pw_mcp_read: string;
   pw_mcp_write: string;
+  pw_repair_executor: string;
 }
 
 export interface ProvisionRuntimeRolesInput {
@@ -61,6 +68,7 @@ async function setRolePassword(
     pw_projector: `ALTER ROLE pw_projector LOGIN PASSWORD ${quotedPassword}`,
     pw_mcp_read: `ALTER ROLE pw_mcp_read LOGIN PASSWORD ${quotedPassword}`,
     pw_mcp_write: `ALTER ROLE pw_mcp_write LOGIN PASSWORD ${quotedPassword}`,
+    pw_repair_executor: `ALTER ROLE pw_repair_executor LOGIN PASSWORD ${quotedPassword}`,
   };
   await client.query(statements[role]);
 }
