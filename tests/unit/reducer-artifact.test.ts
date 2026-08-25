@@ -1,9 +1,10 @@
 import {
   parseReducerWorkerMessage,
   runReducerArtifactEvidence,
-  sha256File,
   type CanonicalOrderEvent,
 } from "@projection-witness/evidence";
+import { executeReducerBytes } from "../../packages/evidence/src/reducer-artifact.js";
+import { ApprovedOrderReducerSha256 } from "@projection-witness/projector";
 import { buildReducerBundle } from "../../scripts/lib/reducer-bundle.js";
 import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -82,12 +83,10 @@ describe("exact reducer artifact evidence", () => {
       artifactPath,
       `require("node:fs").writeFileSync(${JSON.stringify(markerPath)}, "executed");\nmodule.exports.reduceOrder = () => { throw new Error("not reached"); };\n`,
     );
-    const actualDigest = await sha256File(artifactPath);
-
     await expect(
       runReducerArtifactEvidence(artifactPath, {
         schemaVersion: 1,
-        expectedReducerSha256: actualDigest === "a".repeat(64) ? "b".repeat(64) : "a".repeat(64),
+        expectedReducerSha256: ApprovedOrderReducerSha256,
         streamId: "ORD-DAYTONA",
         headVersion: 2,
         events,
@@ -107,16 +106,8 @@ describe("exact reducer artifact evidence", () => {
   return { ...state, paidCents: state.totalCents, paymentStatus: "PAID", lastStreamVersion: event.streamVersion };
 };`,
     );
-    const expectedDigest = await sha256File(artifactPath);
-
-    const result = await runReducerArtifactEvidence(artifactPath, {
-      schemaVersion: 1,
-      expectedReducerSha256: expectedDigest,
-      streamId: "ORD-DAYTONA",
-      headVersion: 2,
-      events,
-    });
-    expect(result.candidate.value.orderId).toBe("ORD-DAYTONA");
+    const result = await executeReducerBytes(await readFile(artifactPath), events, 2_000);
+    expect(result.first).toMatchObject({ orderId: "ORD-DAYTONA" });
     await writeFile(artifactPath, replacement);
     expect(await readFile(artifactPath, "utf8")).toBe(replacement);
   });
@@ -125,21 +116,9 @@ describe("exact reducer artifact evidence", () => {
     const directory = await temporaryDirectory();
     const artifactPath = join(directory, "looping.cjs");
     await writeFile(artifactPath, "module.exports.reduceOrder = () => { while (true) {} };");
-    const expectedDigest = await sha256File(artifactPath);
-
-    await expect(
-      runReducerArtifactEvidence(
-        artifactPath,
-        {
-          schemaVersion: 1,
-          expectedReducerSha256: expectedDigest,
-          streamId: "ORD-DAYTONA",
-          headVersion: 2,
-          events,
-        },
-        { maxExecutionMs: 100 },
-      ),
-    ).rejects.toThrow(/configured deadline/);
+    await expect(executeReducerBytes(await readFile(artifactPath), events, 100)).rejects.toThrow(
+      /configured deadline/,
+    );
   });
 
   it("does not expose the worker channel to artifact initialization code", async () => {
@@ -159,21 +138,29 @@ module.exports.reduceOrder = function (state, event) {
   return { ...state, paidCents: state.totalCents, paymentStatus: "PAID", lastStreamVersion: event.streamVersion };
 };`,
     );
-    const expectedDigest = await sha256File(artifactPath);
-
-    const result = await runReducerArtifactEvidence(artifactPath, {
-      schemaVersion: 1,
-      expectedReducerSha256: expectedDigest,
-      streamId: "ORD-DAYTONA",
-      headVersion: 2,
-      events,
-    });
-    expect(result.candidate.value.orderId).toBe("ORD-DAYTONA");
+    const result = await executeReducerBytes(await readFile(artifactPath), events, 2_000);
+    expect(result.first).toMatchObject({ orderId: "ORD-DAYTONA" });
   });
 
   it("maps malformed worker messages to a bounded validation error", () => {
     expect(() => parseReducerWorkerMessage({ type: "result", first: {} })).toThrow(
       /malformed evidence/,
     );
+  });
+
+  it("rejects an oversized artifact before reading or executing it", async () => {
+    const directory = await temporaryDirectory();
+    const artifactPath = join(directory, "oversized.cjs");
+    await writeFile(artifactPath, " ".repeat(1_048_577));
+
+    await expect(
+      runReducerArtifactEvidence(artifactPath, {
+        schemaVersion: 1,
+        expectedReducerSha256: ApprovedOrderReducerSha256,
+        streamId: "ORD-DAYTONA",
+        headVersion: 2,
+        events,
+      }),
+    ).rejects.toThrow(/no larger than 1048576 bytes/);
   });
 });

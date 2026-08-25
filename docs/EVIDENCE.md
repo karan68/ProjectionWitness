@@ -68,13 +68,16 @@ Build and execute the bounded fixture:
   .\tests\fixtures\reducer-evidence-input.json
 ```
 
-The runner reads the artifact once, checks those bytes, and evaluates that source inside a restricted
-VM context within a resource-limited worker. The artifact context has no worker channel, `require`,
-or `process`; only the wrapper can return replay results. The parent safely validates the message and
-terminates the worker at a trusted deadline (2 seconds by default). Regressions cover channel-forgery
-attempts, malformed messages, path replacement, infinite loops, and pre-execution digest mismatch.
-Event, canonical-byte, and execution-time limits are trusted runner options, not fields the evidence
-JSON can raise. The CLI rejects an input file larger than 2 MiB before reading it.
+The public runner accepts only the reducer digest compiled into the projector build. It rejects an
+artifact over 1 MiB or invalid UTF-8, reads and checks the bytes once, clears the worker environment,
+and evaluates the source in a VM context within a resource-limited worker. The VM is a fixed-name
+loader, not the security boundary; the approved digest is the code-trust control, while the worker
+provides termination and keeps database objects out of the reducer heap. The parent safely validates
+the message and terminates the worker at a trusted deadline (2 seconds by default). Regressions cover
+channel-forgery attempts, malformed messages, path replacement, infinite loops, oversized artifacts,
+and pre-execution digest mismatch. Event, canonical-byte, and execution-time limits are trusted
+runner options, not fields the evidence JSON can raise. The CLI rejects an input file larger than
+2 MiB before reading it.
 
 Verified fixture output:
 

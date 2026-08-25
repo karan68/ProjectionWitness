@@ -7,5 +7,9 @@
     "tsBuildInfoFile": "dist/tsconfig.tsbuildinfo"
   },
   "include": ["src/**/*.ts"],
-  "references": [{ "path": "../domain" }, { "path": "../reducer" }]
+  "references": [
+    { "path": "../domain" },
+    { "path": "../../apps/projector" },
+    { "path": "../reducer" }
+  ]
 }

@@ -1,7 +1,8 @@
 import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Worker } from "node:worker_threads";
+import { ApprovedOrderReducerSha256 } from "@projection-witness/projector";
 import { z } from "zod";
 import { canonicalJson } from "./canonical-json.js";
 import {
@@ -78,10 +79,11 @@ export interface ReducerArtifactEvidenceLimits {
 }
 
 const ExecutionTimeoutSchema = z.number().int().positive().safe().max(60_000);
+const MaximumReducerArtifactBytes = 1_048_576;
 const verifiedEvidence = new WeakSet<object>();
 const WorkerResultSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("result"), first: z.unknown(), second: z.unknown() }).strict(),
-  z.object({ type: z.literal("error"), message: z.string().max(1_024) }).strict(),
+  z.object({ type: z.literal("error") }).strict(),
 ]);
 
 const ReducerWorkerSource = `
@@ -117,12 +119,7 @@ async function main() {
   parentPort.postMessage({ type: "result", first: replay(), second: replay() });
 }
 
-main().catch((error) => {
-  parentPort.postMessage({
-    type: "error",
-    message: error instanceof Error ? error.message : "Reducer worker failed",
-  });
-});
+main().catch(() => parentPort.postMessage({ type: "error" }));
 `;
 
 function deepFreeze(value: unknown): void {
@@ -150,7 +147,7 @@ export function isVerifiedReducerArtifactEvidence(
 
 export function parseReducerWorkerMessage(
   message: unknown,
-): { type: "result"; first: unknown; second: unknown } | { type: "error"; message: string } {
+): { type: "result"; first: unknown; second: unknown } | { type: "error" } {
   const parsed = WorkerResultSchema.safeParse(message);
   if (!parsed.success) {
     throw new Error("Reducer worker returned malformed evidence");
@@ -158,12 +155,13 @@ export function parseReducerWorkerMessage(
   return parsed.data;
 }
 
-async function executeReducerBytes(
+export async function executeReducerBytes(
   artifactBytes: Buffer,
   events: readonly unknown[],
   maxExecutionMs: number,
 ): Promise<{ first: unknown; second: unknown }> {
   const worker = new Worker(ReducerWorkerSource, {
+    env: {},
     eval: true,
     resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16 },
     workerData: { artifactSource: artifactBytes.toString("utf8"), events },
@@ -197,7 +195,7 @@ async function executeReducerBytes(
       finish(() => {
         void worker.terminate();
         if (parsed.type === "error") {
-          rejectPromise(new Error(parsed.message));
+          rejectPromise(new Error("Reducer worker failed"));
           return;
         }
         resolvePromise({ first: parsed.first, second: parsed.second });
@@ -229,11 +227,23 @@ export async function runReducerArtifactEvidence(
   limits: ReducerArtifactEvidenceLimits = {},
 ): Promise<VerifiedReducerArtifactEvidence> {
   const parsed = ReducerArtifactEvidenceInputSchema.parse(input);
+  if (parsed.expectedReducerSha256 !== ApprovedOrderReducerSha256) {
+    throw new Error("Reducer artifact digest is not approved by this build");
+  }
   const artifactPath = resolve(artifactPathInput);
+  const artifactStats = await stat(artifactPath);
+  if (!artifactStats.isFile() || artifactStats.size > MaximumReducerArtifactBytes) {
+    throw new Error("Reducer artifact must be a file no larger than 1048576 bytes");
+  }
   const artifactBytes = await readFile(artifactPath);
   const reducerSha256 = createHash("sha256").update(artifactBytes).digest("hex");
   if (reducerSha256 !== parsed.expectedReducerSha256) {
     throw new Error("Reducer artifact digest does not match runtime attestation");
+  }
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(artifactBytes);
+  } catch {
+    throw new Error("Reducer artifact is not valid UTF-8 JavaScript");
   }
 
   const snapshot = snapshotEventStream({
