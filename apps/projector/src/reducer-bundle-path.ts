@@ -2,10 +2,19 @@ import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { normalize, resolve } from "node:path";
-import { createContext, Script } from "node:vm";
+import { Worker } from "node:worker_threads";
 import { z } from "zod";
+import {
+  OrderProjectionSchema,
+  type OrderEvent,
+  type OrderProjection,
+} from "@projection-witness/domain";
 import type { OrderReducer } from "./gap-aware-projector.js";
 
+export const ApprovedOrderReducerSha256 =
+  "4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637";
+const MaximumReducerBundleBytes = 1_048_576;
+const ReducerExecutionTimeoutMs = 2_000;
 const ReducerBundlePathSchema = z.string().trim().min(1).max(256);
 const ContentAddressedBundlePathSchema = z
   .string()
@@ -21,8 +30,115 @@ export interface ReducerBundleFileInfo {
   isSymbolicLink: () => boolean;
 }
 
-function isOrderReducer(value: unknown): value is OrderReducer {
-  return typeof value === "function";
+type ReducerWorkerRequest =
+  | { type: "probe" }
+  | { type: "reduce"; state: OrderProjection | null; event: OrderEvent };
+
+const ReducerWorkerResponseSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("ready") }).strict(),
+  z.object({ type: z.literal("result"), first: z.unknown(), second: z.unknown() }).strict(),
+  z.object({ type: z.literal("error") }).strict(),
+]);
+
+const ReducerWorkerSource = `
+const { parentPort, workerData } = require("node:worker_threads");
+const { createContext, Script } = require("node:vm");
+
+try {
+  const reducerModule = { exports: {} };
+  const context = createContext({ module: reducerModule, exports: reducerModule.exports });
+  new Script(workerData.source, {
+    filename: "projection-witness-order-reducer.cjs",
+  }).runInContext(context);
+  if (typeof reducerModule.exports.reduceOrder !== "function") {
+    throw new Error("missing reducer");
+  }
+  if (workerData.request.type === "probe") {
+    parentPort.postMessage({ type: "ready" });
+  } else {
+    const run = () => reducerModule.exports.reduceOrder(
+      structuredClone(workerData.request.state),
+      structuredClone(workerData.request.event),
+    );
+    parentPort.postMessage({ type: "result", first: run(), second: run() });
+  }
+} catch {
+  parentPort.postMessage({ type: "error" });
+}
+`;
+
+export async function executeReducerSource(
+  source: string,
+  request: ReducerWorkerRequest,
+  timeoutMs = ReducerExecutionTimeoutMs,
+): Promise<{ first: unknown; second: unknown } | undefined> {
+  const boundedTimeout = z.number().int().positive().max(60_000).parse(timeoutMs);
+  const worker = new Worker(ReducerWorkerSource, {
+    env: {},
+    eval: true,
+    resourceLimits: { maxOldGenerationSizeMb: 64, maxYoungGenerationSizeMb: 16 },
+    workerData: { request, source },
+  });
+
+  return new Promise((resolvePromise, rejectPromise) => {
+    let settled = false;
+    const finish = (action: () => void): void => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      void worker.terminate();
+      action();
+    };
+    const timer = setTimeout(
+      () => finish(() => rejectPromise(new Error("Attested reducer execution timed out"))),
+      boundedTimeout,
+    );
+    worker.once("message", (message: unknown) => {
+      const parsed = ReducerWorkerResponseSchema.safeParse(message);
+      if (!parsed.success) {
+        finish(() => rejectPromise(new Error("Attested reducer execution failed")));
+        return;
+      }
+      const response = parsed.data;
+      if (response.type === "error") {
+        finish(() => rejectPromise(new Error("Attested reducer execution failed")));
+        return;
+      }
+      if (response.type === "ready") {
+        finish(() => resolvePromise(undefined));
+        return;
+      }
+      finish(() => resolvePromise({ first: response.first, second: response.second }));
+    });
+    worker.once("error", () =>
+      finish(() => rejectPromise(new Error("Attested reducer execution failed"))),
+    );
+    worker.once("exit", (code) => {
+      finish(() =>
+        rejectPromise(
+          new Error(
+            code === 0
+              ? "Attested reducer worker returned no result"
+              : "Attested reducer execution failed",
+          ),
+        ),
+      );
+    });
+  });
+}
+
+export function validateDeterministicReducerResults(result: {
+  first: unknown;
+  second: unknown;
+}): OrderProjection {
+  const first = OrderProjectionSchema.parse(result.first);
+  const second = OrderProjectionSchema.parse(result.second);
+  if (JSON.stringify(first) !== JSON.stringify(second)) {
+    throw new Error("Attested reducer output is not deterministic");
+  }
+  return first;
 }
 
 export function assertRegularReducerBundle(fileInfo: ReducerBundleFileInfo): void {
@@ -61,6 +177,9 @@ export async function loadReducerBundle(
     if (!fileInfo.isFile()) {
       throw new Error("REDUCER_BUNDLE_PATH must remain a regular file while loading");
     }
+    if (fileInfo.size > MaximumReducerBundleBytes) {
+      throw new Error("REDUCER_BUNDLE_PATH exceeds the 1048576 byte limit");
+    }
     bytes = await file.readFile();
   } finally {
     await file.close();
@@ -71,25 +190,22 @@ export async function loadReducerBundle(
   if (filenameDigest !== sha256) {
     throw new Error("REDUCER_BUNDLE_PATH filename does not match its SHA-256 digest");
   }
-  const module = { exports: {} as { reduceOrder?: unknown } };
+  if (sha256 !== ApprovedOrderReducerSha256) {
+    throw new Error("REDUCER_BUNDLE_PATH digest is not approved by this projector build");
+  }
+  let source: string;
   try {
-    const context = createContext({ module, exports: module.exports });
-    new Script(bytes.toString("utf8"), {
-      filename: "projection-witness-order-reducer.cjs",
-    }).runInContext(context);
+    source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
-    throw new Error("REDUCER_BUNDLE_PATH could not be evaluated safely");
+    throw new Error("REDUCER_BUNDLE_PATH is not valid UTF-8 JavaScript");
   }
-  if (!isOrderReducer(module.exports.reduceOrder)) {
-    throw new Error("REDUCER_BUNDLE_PATH must export reduceOrder");
-  }
-  const loadedReducer = module.exports.reduceOrder;
-  const reduceOrder: OrderReducer = (state, event) => {
-    try {
-      return loadedReducer(state, event);
-    } catch {
-      throw new Error("Attested reducer execution failed");
+  await executeReducerSource(source, { type: "probe" });
+  const reduceOrder: OrderReducer = async (state, event) => {
+    const result = await executeReducerSource(source, { type: "reduce", state, event });
+    if (result === undefined) {
+      throw new Error("Attested reducer execution returned no result");
     }
+    return validateDeterministicReducerResults(result);
   };
   return { reduceOrder, sha256 };
 }

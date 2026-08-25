@@ -79,8 +79,12 @@ $env:REDUCER_BUNDLE_PATH = ".\artifacts\order-reducer.<sha256-from-build>.cjs"
 ```
 
 The process allows only the known artifact path and rejects symbolic links. It opens the regular
-content-addressed file, checks the filename digest, reads and hashes it once, then evaluates those
-already-read bytes in a restricted VM context
+content-addressed file, checks the filename digest, reads and hashes it once, and requires the digest
+compiled into this projector build. It rejects files larger than 1 MiB or invalid UTF-8 before
+execution. Startup probes the approved artifact in a no-environment worker; every reducer call runs
+twice in a disposable resource-limited worker with a 2-second deadline, strict output schema, and
+byte-equal normalized results. The VM supplies a fixed non-secret filename for evaluation but is not
+treated as a security boundary
 under a fixed non-secret filename. A concurrent build or path replacement therefore cannot make
 the manifest attest different bytes than the reducer being executed, and failures cannot expose an
 encoded source URL. Builds publish immutable digest-named files through a same-directory temporary

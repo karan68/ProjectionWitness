@@ -1,12 +1,18 @@
 import {
+  ApprovedOrderReducerSha256,
   assertRegularReducerBundle,
   loadReducerBundle,
   resolveReducerBundlePath,
 } from "@projection-witness/projector";
+import {
+  executeReducerSource,
+  validateDeterministicReducerResults,
+} from "../../apps/projector/src/reducer-bundle-path.js";
+import { buildReducerBundle } from "../../scripts/lib/reducer-bundle.js";
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
 const temporaryDirectories: string[] = [];
@@ -66,45 +72,85 @@ describe("reducer bundle path", () => {
     await expect(resolveReducerBundlePath(fixture.relativePath, fixture.root)).rejects.toThrow();
   });
 
-  it("keeps executing the hashed bytes when the artifact path changes after loading", async () => {
-    const replacement = "module.exports.reduceOrder = () => { throw new Error('replacement'); };";
-    const source = `module.exports.reduceOrder = function (state, event) {
-  return state ?? { orderId: event.streamId, totalCents: event.totalCents, paidCents: 0, paymentStatus: "AWAITING_PAYMENT", fulfillmentStatus: "NOT_SHIPPED", lastStreamVersion: event.streamVersion };
-};`;
-    const fixture = await projectFixture(source);
+  it("loads only the compile-time approved artifact and returns schema-valid output", async () => {
+    const bundle = await buildReducerBundle();
+    expect(bundle.sha256).toBe(ApprovedOrderReducerSha256);
+    const bundlePath = relative(process.cwd(), bundle.outputPath).replaceAll("\\", "/");
+    const loaded = await loadReducerBundle(bundlePath);
 
-    const loaded = await loadReducerBundle(fixture.relativePath, fixture.root);
-    await writeFile(fixture.artifactPath, replacement);
-    expect(loaded.sha256).toBe(fixture.sha256);
-    expect(
+    await expect(
       loaded.reduceOrder(null, {
         type: "OrderPlaced",
         streamId: "ORD-LOADED",
         streamVersion: 1,
         totalCents: 100,
       }),
-    ).toMatchObject({ orderId: "ORD-LOADED", totalCents: 100 });
-    expect(await readFile(fixture.artifactPath, "utf8")).toBe(replacement);
+    ).resolves.toMatchObject({ orderId: "ORD-LOADED", totalCents: 100 });
   });
 
-  it("redacts bundle source from evaluation and reducer failures", async () => {
-    const importFailure = await projectFixture("throw new Error('PRIVATE_IMPORT_SOURCE');");
-    await expect(loadReducerBundle(importFailure.relativePath, importFailure.root)).rejects.toThrow(
-      "REDUCER_BUNDLE_PATH could not be evaluated safely",
-    );
+  it("rejects a valid content-addressed artifact that is not approved", async () => {
+    const source = `module.exports.reduceOrder = function (state, event) {
+  return state ?? { orderId: event.streamId, totalCents: event.totalCents, paidCents: 0, paymentStatus: "AWAITING_PAYMENT", fulfillmentStatus: "NOT_SHIPPED", lastStreamVersion: event.streamVersion };
+};`;
+    const fixture = await projectFixture(source);
 
-    const reducerFailure = await projectFixture(
-      "module.exports.reduceOrder = () => { throw new Error('PRIVATE_REDUCER_SOURCE'); };",
+    await expect(loadReducerBundle(fixture.relativePath, fixture.root)).rejects.toThrow(
+      /not approved/,
     );
-    const loaded = await loadReducerBundle(reducerFailure.relativePath, reducerFailure.root);
+  });
+
+  it("redacts worker failures and terminates looping reducer code", async () => {
+    await expect(
+      executeReducerSource("throw new Error('PRIVATE_IMPORT_SOURCE');", { type: "probe" }),
+    ).rejects.toThrow("Attested reducer execution failed");
+    await expect(
+      executeReducerSource(
+        "module.exports.reduceOrder = () => { while (true) {} };",
+        {
+          type: "reduce",
+          state: null,
+          event: {
+            type: "OrderPlaced",
+            streamId: "ORD-TIMEOUT",
+            streamVersion: 1,
+            totalCents: 100,
+          },
+        },
+        100,
+      ),
+    ).rejects.toThrow(/timed out/);
+  });
+
+  it("rejects invalid or nondeterministic worker output", () => {
+    expect(() => validateDeterministicReducerResults({ first: {}, second: {} })).toThrow();
     expect(() =>
-      loaded.reduceOrder(null, {
-        type: "OrderPlaced",
-        streamId: "ORD-REDACTED",
-        streamVersion: 1,
-        totalCents: 100,
+      validateDeterministicReducerResults({
+        first: {
+          orderId: "ORD-NONDETERMINISTIC",
+          totalCents: 100,
+          paidCents: 0,
+          paymentStatus: "AWAITING_PAYMENT",
+          fulfillmentStatus: "NOT_SHIPPED",
+          lastStreamVersion: 1,
+        },
+        second: {
+          orderId: "ORD-NONDETERMINISTIC",
+          totalCents: 100,
+          paidCents: 100,
+          paymentStatus: "PAID",
+          fulfillmentStatus: "NOT_SHIPPED",
+          lastStreamVersion: 1,
+        },
       }),
-    ).toThrow("Attested reducer execution failed");
+    ).toThrow(/not deterministic/);
+  });
+
+  it("rejects an oversized bundle before digest approval or evaluation", async () => {
+    const source = " ".repeat(1_048_577);
+    const fixture = await projectFixture(source);
+    await expect(loadReducerBundle(fixture.relativePath, fixture.root)).rejects.toThrow(
+      /1048576 byte limit/,
+    );
   });
 
   it("rejects bytes that do not match the content-addressed filename", async () => {

@@ -35,7 +35,10 @@ interface OrderViewRow {
   row_version: string;
 }
 
-export type OrderReducer = (state: OrderProjection | null, event: OrderEvent) => OrderProjection;
+export type OrderReducer = (
+  state: OrderProjection | null,
+  event: OrderEvent,
+) => OrderProjection | Promise<OrderProjection>;
 
 export interface GapAwareProjectorOptions {
   projectionName?: string;
@@ -301,7 +304,7 @@ export class GapAwareOrderProjector {
       return false;
     }
 
-    const candidate = this.reducer(currentProjection, event);
+    const candidate = await this.reducer(currentProjection, event);
     if (currentRow === undefined) {
       await client.query(
         `INSERT INTO order_view (
