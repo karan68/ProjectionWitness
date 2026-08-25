@@ -24,8 +24,12 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve: resolvePromise };
 }
 
-const migratorUrl = process.env["DATABASE_URL_MIGRATOR"] ?? "";
-const projectorUrl = process.env["DATABASE_URL_PROJECTOR"] ?? "";
+function environmentVariable(name: string): string | undefined {
+  return process.env[name];
+}
+
+const migratorUrl = environmentVariable("DATABASE_URL_MIGRATOR") ?? "";
+const projectorUrl = environmentVariable("DATABASE_URL_PROJECTOR") ?? "";
 const describeWithDatabase = migratorUrl === "" || projectorUrl === "" ? describe.skip : describe;
 
 describeWithDatabase("gap-aware projector and runtime", () => {

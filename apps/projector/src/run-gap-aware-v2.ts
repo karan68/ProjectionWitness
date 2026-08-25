@@ -19,6 +19,10 @@ function requiredEnvironmentVariable(name: string): string {
   return value;
 }
 
+function environmentVariable(name: string): string | undefined {
+  return process.env[name];
+}
+
 function isOrderReducer(value: unknown): value is OrderReducer {
   return typeof value === "function";
 }
@@ -28,7 +32,7 @@ if (requiredEnvironmentVariable("PROJECTOR_MODE") !== GapAwareAlgorithmVersion) 
 }
 
 const databaseUrl = requiredEnvironmentVariable("DATABASE_URL_PROJECTOR");
-const projectionName = process.env["PROJECTION_NAME"]?.trim() || "orders";
+const projectionName = environmentVariable("PROJECTION_NAME")?.trim() || "orders";
 const generation = requiredEnvironmentVariable("PROJECTOR_GENERATION");
 const sourceCommitSha = requiredEnvironmentVariable("SOURCE_COMMIT_SHA");
 const reducerBundlePath = resolve(requiredEnvironmentVariable("REDUCER_BUNDLE_PATH"));
