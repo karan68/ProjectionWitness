@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "projectionName": "orders",
+  "runtime": {
+    "projectionName": "orders",
+    "generation": "2",
+    "reducerSha256": "4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637",
+    "sourceCommitSha": "daytona-fixture",
+    "algorithmVersion": "gap-aware-v1",
+    "gapStrategy": "TRACKED_NON_BLOCKING"
+  },
+  "currentRow": {
+    "orderId": "ORD-DAYTONA-FIXTURE",
+    "totalCents": "12900",
+    "paidCents": "0",
+    "paymentStatus": "AWAITING_PAYMENT",
+    "fulfillmentStatus": "NOT_SHIPPED",
+    "lastStreamVersion": 1,
+    "rowVersion": "1"
+  },
+  "reducerInput": {
+    "schemaVersion": 1,
+    "expectedReducerSha256": "4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637",
+    "streamId": "ORD-DAYTONA-FIXTURE",
+    "headVersion": 2,
+    "events": [
+      {
+        "eventId": "50000000-0000-4000-8000-000000000001",
+        "globalPosition": "100",
+        "streamId": "ORD-DAYTONA-FIXTURE",
+        "streamVersion": 1,
+        "eventType": "OrderPlaced",
+        "payload": {
+          "type": "OrderPlaced",
+          "totalCents": 12900
+        },
+        "metadata": {},
+        "recordedAt": "2026-08-26T03:00:00.000Z"
+      },
+      {
+        "eventId": "50000000-0000-4000-8000-000000000002",
+        "globalPosition": "102",
+        "streamId": "ORD-DAYTONA-FIXTURE",
+        "streamVersion": 2,
+        "eventType": "PaymentCaptured",
+        "payload": {
+          "type": "PaymentCaptured",
+          "paymentId": "PAY-DAYTONA-FIXTURE",
+          "amountCents": 12900
+        },
+        "metadata": {},
+        "recordedAt": "2026-08-26T03:00:01.000Z"
+      }
+    ]
+  },
+  "ttlSeconds": 300
+}
