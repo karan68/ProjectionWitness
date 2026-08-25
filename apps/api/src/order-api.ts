@@ -72,17 +72,21 @@ export function buildOrderApi(pool: Pool, options: OrderApiOptions = {}): Fastif
   });
 
   app.get("/meta", async (_request, reply) => {
-    const runtime = await getRuntimeMetadata(pool);
-    if (runtime === undefined) {
-      return reply.code(503).send({ code: "RUNTIME_UNATTESTED" });
+    try {
+      const runtime = await getRuntimeMetadata(pool);
+      if (runtime === undefined) {
+        return reply.code(503).send({ code: "RUNTIME_UNATTESTED" });
+      }
+      return {
+        sourceCommitSha: runtime.source_commit_sha,
+        reducerSha256: runtime.reducer_sha256,
+        projectorGeneration: runtime.generation,
+        algorithmVersion: runtime.algorithm_version,
+        gapStrategy: runtime.gap_strategy,
+      };
+    } catch {
+      return reply.code(503).send({ code: "DATABASE_UNAVAILABLE" });
     }
-    return {
-      sourceCommitSha: runtime.source_commit_sha,
-      reducerSha256: runtime.reducer_sha256,
-      projectorGeneration: runtime.generation,
-      algorithmVersion: runtime.algorithm_version,
-      gapStrategy: runtime.gap_strategy,
-    };
   });
 
   app.get<{ Params: { orderId: string } }>("/orders/:orderId", async (request, reply) => {

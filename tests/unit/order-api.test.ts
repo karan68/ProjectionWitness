@@ -50,4 +50,20 @@ describe("Order API safety surface", () => {
       await app.close();
     }
   });
+
+  it("reports database unavailability consistently from metadata", async () => {
+    const pool = poolWithQuery(async () => {
+      throw new Error("database unavailable detail");
+    });
+    const app = buildOrderApi(pool);
+    try {
+      const response = await app.inject({ method: "GET", url: "/meta" });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json()).toEqual({ code: "DATABASE_UNAVAILABLE" });
+      expect(response.body).not.toContain("database unavailable detail");
+    } finally {
+      await app.close();
+    }
+  });
 });

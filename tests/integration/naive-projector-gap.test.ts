@@ -30,9 +30,7 @@ const describeWithDatabase = databaseUrl === "" ? describe.skip : describe;
 describeWithDatabase("naive projector out-of-order commit gap", () => {
   let pool: Pool;
   let eventStore: OrderEventStore;
-  let projector: NaiveOrderProjector;
   let api: FastifyInstance;
-  const projectionName = `orders-gap-test-${randomUUID()}`;
 
   beforeAll(async () => {
     pool = createDatabasePool({
@@ -41,14 +39,7 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
       maxConnections: 8,
     });
     await migrateDatabase(pool);
-    await pool.query(
-      `INSERT INTO projection_checkpoints (projection_name, last_global_position)
-       SELECT $1, COALESCE(max(global_position), 0)
-       FROM events`,
-      [projectionName],
-    );
     eventStore = new OrderEventStore(pool);
-    projector = new NaiveOrderProjector(pool, { projectionName });
     api = buildOrderApi(pool);
     await api.ready();
   });
@@ -61,6 +52,7 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
   async function seedAndProjectOrders(
     targetOrderId: string,
     unrelatedOrderId: string,
+    projector: NaiveOrderProjector,
   ): Promise<void> {
     await eventStore.append({
       streamId: targetOrderId,
@@ -76,11 +68,23 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
     expect(initialPoll.processedCount).toBe(2);
   }
 
+  async function createIsolatedProjector(): Promise<NaiveOrderProjector> {
+    const projectionName = `orders-gap-test-${randomUUID()}`;
+    await pool.query(
+      `INSERT INTO projection_checkpoints (projection_name, last_global_position)
+       SELECT $1, COALESCE(max(global_position), 0)
+       FROM events`,
+      [projectionName],
+    );
+    return new NaiveOrderProjector(pool, { projectionName });
+  }
+
   it("leaves a committed payment permanently behind the advanced checkpoint", async () => {
     const suffix = randomUUID();
     const targetOrderId = `ORD-GAP-A-${suffix}`;
     const unrelatedOrderId = `ORD-GAP-B-${suffix}`;
-    await seedAndProjectOrders(targetOrderId, unrelatedOrderId);
+    const projector = await createIsolatedProjector();
+    await seedAndProjectOrders(targetOrderId, unrelatedOrderId, projector);
     const gateReached = deferred();
     const releaseCommit = deferred();
     let pendingPosition: string | undefined;
@@ -157,7 +161,8 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
     const suffix = randomUUID();
     const targetOrderId = `ORD-ABLATION-A-${suffix}`;
     const unrelatedOrderId = `ORD-ABLATION-B-${suffix}`;
-    await seedAndProjectOrders(targetOrderId, unrelatedOrderId);
+    const projector = await createIsolatedProjector();
+    await seedAndProjectOrders(targetOrderId, unrelatedOrderId, projector);
     await eventStore.append({
       streamId: targetOrderId,
       expectedVersion: 1,
@@ -184,6 +189,48 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
       paidCents: 12_900,
       paymentStatus: "PAID",
       lastStreamVersion: 2,
+    });
+  });
+
+  it("treats an event already represented by the row as an idempotent no-op", async () => {
+    const suffix = randomUUID();
+    const targetOrderId = `ORD-NOOP-${suffix}`;
+    const projector = await createIsolatedProjector();
+    await eventStore.append({
+      streamId: targetOrderId,
+      expectedVersion: 0,
+      event: { type: "OrderPlaced", totalCents: 100 },
+    });
+    await pool.query(
+      `INSERT INTO order_view (
+         order_id,
+         total_cents,
+         paid_cents,
+         payment_status,
+         fulfillment_status,
+         last_stream_version,
+         row_version
+       )
+       VALUES ($1, 100, 100, 'PAID', 'NOT_SHIPPED', 1, 7)`,
+      [targetOrderId],
+    );
+
+    const poll = await projector.poll();
+    expect(poll.processedCount).toBe(1);
+    const row = await pool.query<{
+      paid_cents: string;
+      last_stream_version: number;
+      row_version: string;
+    }>(
+      `SELECT paid_cents::text, last_stream_version, row_version::text
+       FROM order_view
+       WHERE order_id = $1`,
+      [targetOrderId],
+    );
+    expect(row.rows[0]).toEqual({
+      paid_cents: "100",
+      last_stream_version: 1,
+      row_version: "7",
     });
   });
 });

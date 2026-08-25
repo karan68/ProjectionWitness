@@ -148,10 +148,15 @@ export class NaiveOrderProjector {
           [event.streamId],
         );
         const currentRow = rowResult.rows[0];
-        const candidate = reduceOrder(
-          currentRow === undefined ? null : projectionFromRow(currentRow),
-          event,
-        );
+        const currentProjection = currentRow === undefined ? null : projectionFromRow(currentRow);
+        if (
+          currentProjection !== null &&
+          currentProjection.lastStreamVersion >= event.streamVersion
+        ) {
+          processedGlobalPositions.push(eventRow.global_position);
+          continue;
+        }
+        const candidate = reduceOrder(currentProjection, event);
 
         if (currentRow === undefined) {
           await client.query(
