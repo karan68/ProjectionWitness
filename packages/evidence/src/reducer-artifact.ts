@@ -14,8 +14,6 @@ export const ReducerArtifactEvidenceInputSchema = z
     streamId: z.string().trim().min(1).max(128),
     headVersion: z.number().int().nonnegative().safe(),
     events: z.array(z.unknown()),
-    maxEvents: z.number().int().positive().safe().optional(),
-    maxCanonicalBytes: z.number().int().positive().safe().optional(),
   })
   .strict();
 
@@ -27,6 +25,11 @@ export interface ReducerArtifactEvidenceResult {
   stream: ReturnType<typeof snapshotEventStream>["evidence"];
   candidate: ReturnType<typeof replayOrderStreamDeterministically>["candidate"];
   reducerDeterministic: true;
+}
+
+export interface ReducerArtifactEvidenceLimits {
+  maxEvents?: number;
+  maxCanonicalBytes?: number;
 }
 
 function isOrderReducer(value: unknown): value is EvidenceOrderReducer {
@@ -41,6 +44,7 @@ export async function sha256File(pathInput: string): Promise<string> {
 export async function runReducerArtifactEvidence(
   artifactPathInput: string,
   input: unknown,
+  limits: ReducerArtifactEvidenceLimits = {},
 ): Promise<ReducerArtifactEvidenceResult> {
   const parsed = ReducerArtifactEvidenceInputSchema.parse(input);
   const artifactPath = resolve(artifactPathInput);
@@ -53,10 +57,10 @@ export async function runReducerArtifactEvidence(
     streamId: parsed.streamId,
     headVersion: parsed.headVersion,
     events: parsed.events,
-    ...(parsed.maxEvents === undefined ? {} : { maxEvents: parsed.maxEvents }),
-    ...(parsed.maxCanonicalBytes === undefined
+    ...(limits.maxEvents === undefined ? {} : { maxEvents: limits.maxEvents }),
+    ...(limits.maxCanonicalBytes === undefined
       ? {}
-      : { maxCanonicalBytes: parsed.maxCanonicalBytes }),
+      : { maxCanonicalBytes: limits.maxCanonicalBytes }),
   });
   const artifactUrl = new URL(pathToFileURL(artifactPath));
   artifactUrl.searchParams.set("sha256", reducerSha256);

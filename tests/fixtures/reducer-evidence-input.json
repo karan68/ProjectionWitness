@@ -31,7 +31,5 @@
       "metadata": {},
       "recordedAt": "2026-08-26T03:00:01.000Z"
     }
-  ],
-  "maxEvents": 1000,
-  "maxCanonicalBytes": 1048576
+  ]
 }

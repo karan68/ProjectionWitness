@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 describe("RFC 8785 canonical JSON", () => {
   it("matches the RFC 8785 sections 3.2.2 and 3.2.3 sample", () => {
     const sample = {
-      numbers: [333333333.33333329, 1e30, 4.5, 2e-3, 1e-27],
+      numbers: [Number("333333333.33333329"), 1e30, 4.5, 2e-3, 1e-27],
       string: '€$\u000f\nA\'B"\\\\"/',
       literals: [null, true, false],
     };

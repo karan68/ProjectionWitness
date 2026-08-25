@@ -42,15 +42,19 @@ npm run --silent evidence:run-reducer -- artifacts/order-reducer.mjs tests/fixtu
 
 const sessionResponse = await client.sessions.create({ agent: { name: agentName } });
 const sessionId = sessionResponse.data.id;
-const stream = await client.sessions.createTurnStream(sessionId, {
-  input: [
-    {
-      type: "user.message",
-      content: `Use the sandbox execution tool to run this exact shell command once. Do not alter, split, or simulate it.\n\n${command}`,
-    },
-  ],
-  previousTurnId: "none",
-});
+const stream = await client.sessions.createTurnStream(
+  sessionId,
+  {
+    input: [
+      {
+        type: "user.message",
+        content: `Use the sandbox execution tool to run this exact shell command once. Do not alter, split, or simulate it.\n\n${command}`,
+      },
+    ],
+    previousTurnId: "none",
+  },
+  { timeoutInSeconds: 900 },
+);
 
 let terminalStatus: string | undefined;
 for await (const event of stream) {

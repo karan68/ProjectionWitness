@@ -34,6 +34,7 @@ export {
   runReducerArtifactEvidence,
   sha256File,
   type ReducerArtifactEvidenceInput,
+  type ReducerArtifactEvidenceLimits,
   type ReducerArtifactEvidenceResult,
 } from "./reducer-artifact.js";
 export {
