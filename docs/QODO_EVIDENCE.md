@@ -17,7 +17,7 @@ configuration alone are not represented as review evidence.
 
 | PR | Scope | Qodo result | Material response |
 |---:|---|---|---|
-| [1](https://github.com/karan68/ProjectionWitness/pull/1) | Foundation, toolchain, CI, and versions | Two valid findings on `d28215d` | Remediated; awaiting review of the follow-up commit |
+| [1](https://github.com/karan68/ProjectionWitness/pull/1) | Foundation, toolchain, CI, and versions | Two valid findings on `d28215d`; both resolved on `9a6e0c5` with zero new findings | Accepted and fixed |
 
 ### PR 1 findings
 
@@ -26,8 +26,8 @@ configuration alone are not represented as review evidence.
   asserts the exact npm version before `npm ci`. A clean local install and production audit pass.
 2. **Medium: `ubuntu-latest` is a moving CI target.** Accepted. CI now pins `ubuntu-24.04`.
 
-The follow-up commit must receive a new Qodo review before PR 1 is merged. This file will record
-that reviewed commit and final result after the push-triggered review completes.
+Qodo updated its persistent review for commit `9a6e0c5` on 2026-08-25. It reported zero bugs,
+zero rule violations, and marked both prior findings resolved.
 
 For every PR, record the URL, reviewed commit, findings, fixes, and evidence-backed disagreements
 before merge.
