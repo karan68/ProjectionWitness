@@ -1,4 +1,5 @@
 node_modules/
+.projection-witness/
 dist/
 coverage/
 artifacts/
