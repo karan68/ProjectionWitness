@@ -93,19 +93,27 @@ const parseJson = JSON.parse.bind(JSON);
 const serializedEvents = JSON.stringify(workerData.events);
 
 async function main() {
-  const reducerModule = { exports: {} };
-  const context = createContext({ module: reducerModule, exports: reducerModule.exports });
-  new Script(workerData.artifactSource, {
-    filename: "projection-witness-order-reducer.cjs",
-  }).runInContext(context);
-  if (typeof reducerModule.exports.reduceOrder !== "function") {
-    throw new Error("Reducer artifact must export reduceOrder");
+  const loadReducer = (replayPass) => {
+    const reducerModule = { exports: {} };
+    const context = createContext({
+      __projectionWitnessReplayPass: replayPass,
+      module: reducerModule,
+      exports: reducerModule.exports,
+    });
+    new Script(workerData.artifactSource, {
+      filename: "projection-witness-order-reducer.cjs",
+    }).runInContext(context);
+    if (typeof reducerModule.exports.reduceOrder !== "function") {
+      throw new Error("Reducer artifact must export reduceOrder");
+    }
+    return reducerModule.exports.reduceOrder;
   }
-  const replay = () => {
+  const replay = async (replayPass) => {
+    const reduceOrder = loadReducer(replayPass);
     const events = parseJson(serializedEvents);
     let state = null;
     for (const storedEvent of events) {
-      state = reducerModule.exports.reduceOrder(state, {
+      state = await reduceOrder(state, {
         streamId: storedEvent.streamId,
         streamVersion: storedEvent.streamVersion,
         ...storedEvent.payload,
@@ -116,7 +124,7 @@ async function main() {
     }
     return state;
   };
-  parentPort.postMessage({ type: "result", first: replay(), second: replay() });
+  parentPort.postMessage({ type: "result", first: await replay(1), second: await replay(2) });
 }
 
 main().catch(() => parentPort.postMessage({ type: "error" }));

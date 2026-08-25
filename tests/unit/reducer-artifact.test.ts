@@ -1,4 +1,5 @@
 import {
+  canonicalJson,
   parseReducerWorkerMessage,
   runReducerArtifactEvidence,
   type CanonicalOrderEvent,
@@ -140,6 +141,17 @@ module.exports.reduceOrder = function (state, event) {
     );
     const result = await executeReducerBytes(await readFile(artifactPath), events, 2_000);
     expect(result.first).toMatchObject({ orderId: "ORD-DAYTONA" });
+  });
+
+  it("detects output-affecting state chosen during fresh module initialization", async () => {
+    const source = Buffer.from(`const chosen = __projectionWitnessReplayPass;
+module.exports.reduceOrder = function (state, event) {
+  if (state === null) return { orderId: event.streamId, totalCents: event.totalCents, paidCents: chosen, paymentStatus: "AWAITING_PAYMENT", fulfillmentStatus: "NOT_SHIPPED", lastStreamVersion: event.streamVersion };
+  return { ...state, lastStreamVersion: event.streamVersion };
+};`);
+
+    const replay = await executeReducerBytes(source, events, 2_000);
+    expect(canonicalJson(replay.first)).not.toBe(canonicalJson(replay.second));
   });
 
   it("maps malformed worker messages to a bounded validation error", () => {
