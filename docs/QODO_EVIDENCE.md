@@ -19,6 +19,7 @@ configuration alone are not represented as review evidence.
 |---:|---|---|---|
 | [1](https://github.com/karan68/ProjectionWitness/pull/1) | Foundation, toolchain, CI, and versions | Two valid findings on `d28215d`; both resolved on `9a6e0c5` with zero new findings | Accepted and fixed |
 | [2](https://github.com/karan68/ProjectionWitness/pull/2) | Typed order domain, reducer, migration, and expected-version event store | Pending | Pending |
+| [3](https://github.com/karan68/ProjectionWitness/pull/3) | Naive projector, API read, deterministic gap reproducer, and reliability gate | Pending | Pending |
 
 ### PR 1 findings
 
