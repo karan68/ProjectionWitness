@@ -44,27 +44,39 @@ const ReducerWorkerSource = `
 const { parentPort, workerData } = require("node:worker_threads");
 const { createContext, Script } = require("node:vm");
 
-try {
+function loadReducer(replayPass) {
   const reducerModule = { exports: {} };
-  const context = createContext({ module: reducerModule, exports: reducerModule.exports });
+  const context = createContext({
+    __projectionWitnessReplayPass: replayPass,
+    module: reducerModule,
+    exports: reducerModule.exports,
+  });
   new Script(workerData.source, {
     filename: "projection-witness-order-reducer.cjs",
   }).runInContext(context);
   if (typeof reducerModule.exports.reduceOrder !== "function") {
     throw new Error("missing reducer");
   }
+  return reducerModule.exports.reduceOrder;
+}
+
+async function main() {
   if (workerData.request.type === "probe") {
+    loadReducer(0);
     parentPort.postMessage({ type: "ready" });
   } else {
-    const run = () => reducerModule.exports.reduceOrder(
-      structuredClone(workerData.request.state),
-      structuredClone(workerData.request.event),
-    );
-    parentPort.postMessage({ type: "result", first: run(), second: run() });
+    const run = async (replayPass) => {
+      const reduceOrder = loadReducer(replayPass);
+      return await reduceOrder(
+        structuredClone(workerData.request.state),
+        structuredClone(workerData.request.event),
+      );
+    };
+    parentPort.postMessage({ type: "result", first: await run(1), second: await run(2) });
   }
-} catch {
-  parentPort.postMessage({ type: "error" });
 }
+
+main().catch(() => parentPort.postMessage({ type: "error" }));
 `;
 
 export async function executeReducerSource(
@@ -190,14 +202,14 @@ export async function loadReducerBundle(
   if (filenameDigest !== sha256) {
     throw new Error("REDUCER_BUNDLE_PATH filename does not match its SHA-256 digest");
   }
-  if (sha256 !== ApprovedOrderReducerSha256) {
-    throw new Error("REDUCER_BUNDLE_PATH digest is not approved by this projector build");
-  }
   let source: string;
   try {
     source = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch {
     throw new Error("REDUCER_BUNDLE_PATH is not valid UTF-8 JavaScript");
+  }
+  if (sha256 !== ApprovedOrderReducerSha256) {
+    throw new Error("REDUCER_BUNDLE_PATH digest is not approved by this projector build");
   }
   await executeReducerSource(source, { type: "probe" });
   const reduceOrder: OrderReducer = async (state, event) => {
