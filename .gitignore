@@ -1,0 +1,15 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+*.log
+
+.env
+.env.*
+!.env.example
+
+.trueforge/
+.daytona/
+.tools/
+.DS_Store
+Thumbs.db

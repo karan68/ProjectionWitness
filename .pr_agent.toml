@@ -1,0 +1,32 @@
+[github_app]
+pr_commands = [
+    "/agentic_describe",
+    "/agentic_review",
+]
+handle_push_trigger = true
+push_commands = [
+    "/agentic_review",
+]
+
+[review_agent]
+comments_location_policy = "both"
+inline_comments_severity_threshold = 3
+persistent_comment_notification = true
+issues_user_guidelines = """
+Prioritize correctness, concurrency, authorization, transaction atomicity, bounded work,
+error redaction, and regression tests. Treat SOURCE_OF_TRUTH.md as the product contract.
+"""
+compliance_user_guidelines = """
+Verify that events cannot be mutated; money uses validated integer cents; reducer output is
+deterministic; hashes use RFC 8785 canonicalization; apply accepts no arbitrary SQL or
+identifiers; lock order is preserved; stream, runtime, row, candidate, expiry, and plan are
+rechecked after locking; repair and audit commit atomically; refusal paths make no production
+state writes; and secrets never enter prompts, logs, Git, or Daytona.
+"""
+
+[review_agent_ux]
+show_persistent_review_section = true
+
+[checks]
+enable_auto_checks_feedback = true
+persistent_comment = true
