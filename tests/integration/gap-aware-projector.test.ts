@@ -118,6 +118,31 @@ describeWithDatabase("gap-aware projector and runtime", () => {
     );
   });
 
+  it("accepts the PostgreSQL bigint maximum and rejects overflow before registration", async () => {
+    const acceptedProjectionName = `runtime-int64-${randomUUID()}`;
+    const manifest = {
+      projectionName: acceptedProjectionName,
+      generation: "9223372036854775807",
+      reducerSha256: "a".repeat(64),
+      sourceCommitSha: "commit-int64",
+      algorithmVersion: GapAwareAlgorithmVersion,
+      gapStrategy: TrackedNonBlockingGapStrategy,
+    };
+
+    expect((await registerProjectionRuntime(projectorPool, manifest)).generation).toBe(
+      "9223372036854775807",
+    );
+    const rejectedProjectionName = `runtime-overflow-${randomUUID()}`;
+    await expect(
+      registerProjectionRuntime(projectorPool, {
+        ...manifest,
+        projectionName: rejectedProjectionName,
+        generation: "9223372036854775808",
+      }),
+    ).rejects.toThrow(/signed 64-bit PostgreSQL bigint/);
+    expect(await getProjectionRuntime(projectorPool, rejectedProjectionName)).toBeUndefined();
+  });
+
   it("tracks a new commit gap, continues unrelated work, and resolves the delayed event", async () => {
     const projectionName = await isolatedProjectionName("orders-v2-gap");
     const projector = new GapAwareOrderProjector(projectorPool, { projectionName });
