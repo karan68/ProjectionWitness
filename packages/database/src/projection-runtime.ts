@@ -7,10 +7,13 @@ const PostgresBigintMaximum = 9_223_372_036_854_775_807n;
 
 const PositivePostgresBigintSchema = z
   .string()
+  .max(19, "Runtime generation must contain at most 19 digits")
   .regex(/^[1-9][0-9]*$/)
-  .refine((value) => BigInt(value) <= PostgresBigintMaximum, {
-    message: "Runtime generation must fit a positive signed 64-bit PostgreSQL bigint",
-  });
+  .pipe(
+    z.string().refine((value) => BigInt(value) <= PostgresBigintMaximum, {
+      message: "Runtime generation must fit a positive signed 64-bit PostgreSQL bigint",
+    }),
+  );
 
 const ProjectionRuntimeManifestSchema = z.object({
   projectionName: z.string().trim().min(1).max(128),

@@ -4,12 +4,9 @@ import {
   registerProjectionRuntime,
   TrackedNonBlockingGapStrategy,
 } from "@projection-witness/database";
-import { createHash } from "node:crypto";
-import { readFile } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
-import { pathToFileURL } from "node:url";
-import { GapAwareOrderProjector, type OrderReducer } from "./gap-aware-projector.js";
-import { resolveReducerBundlePath } from "./reducer-bundle-path.js";
+import { GapAwareOrderProjector } from "./gap-aware-projector.js";
+import { loadReducerBundle } from "./reducer-bundle-path.js";
 
 function requiredEnvironmentVariable(name: string): string {
   const value = process.env[name]?.trim();
@@ -23,10 +20,6 @@ function environmentVariable(name: string): string | undefined {
   return process.env[name];
 }
 
-function isOrderReducer(value: unknown): value is OrderReducer {
-  return typeof value === "function";
-}
-
 if (requiredEnvironmentVariable("PROJECTOR_MODE") !== GapAwareAlgorithmVersion) {
   throw new Error(`PROJECTOR_MODE=${GapAwareAlgorithmVersion} is required`);
 }
@@ -35,17 +28,7 @@ const databaseUrl = requiredEnvironmentVariable("DATABASE_URL_PROJECTOR");
 const projectionName = environmentVariable("PROJECTION_NAME")?.trim() || "orders";
 const generation = requiredEnvironmentVariable("PROJECTOR_GENERATION");
 const sourceCommitSha = requiredEnvironmentVariable("SOURCE_COMMIT_SHA");
-const reducerBundlePath = await resolveReducerBundlePath(
-  requiredEnvironmentVariable("REDUCER_BUNDLE_PATH"),
-);
-const reducerBytes = await readFile(reducerBundlePath);
-const reducerSha256 = createHash("sha256").update(reducerBytes).digest("hex");
-const reducerModule = (await import(pathToFileURL(reducerBundlePath).href)) as {
-  reduceOrder?: unknown;
-};
-if (!isOrderReducer(reducerModule.reduceOrder)) {
-  throw new Error("REDUCER_BUNDLE_PATH must export reduceOrder");
-}
+const reducerBundle = await loadReducerBundle(requiredEnvironmentVariable("REDUCER_BUNDLE_PATH"));
 
 const pool = createDatabasePool({
   databaseUrl,
@@ -59,7 +42,7 @@ try {
   const runtime = await registerProjectionRuntime(pool, {
     projectionName,
     generation,
-    reducerSha256,
+    reducerSha256: reducerBundle.sha256,
     sourceCommitSha,
     algorithmVersion: GapAwareAlgorithmVersion,
     gapStrategy: TrackedNonBlockingGapStrategy,
@@ -76,7 +59,7 @@ try {
 
   const projector = new GapAwareOrderProjector(pool, {
     projectionName,
-    reducer: reducerModule.reduceOrder,
+    reducer: reducerBundle.reduceOrder,
   });
   while (!abortController.signal.aborted) {
     const result = await projector.poll();

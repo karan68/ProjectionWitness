@@ -141,6 +141,14 @@ describeWithDatabase("gap-aware projector and runtime", () => {
       }),
     ).rejects.toThrow(/signed 64-bit PostgreSQL bigint/);
     expect(await getProjectionRuntime(projectorPool, rejectedProjectionName)).toBeUndefined();
+
+    await expect(
+      registerProjectionRuntime(projectorPool, {
+        ...manifest,
+        projectionName: `runtime-unbounded-${randomUUID()}`,
+        generation: "9".repeat(10_000),
+      }),
+    ).rejects.toThrow(/at most 19 digits/);
   });
 
   it("tracks a new commit gap, continues unrelated work, and resolves the delayed event", async () => {

@@ -9,4 +9,10 @@ export {
   type NaiveProjectorOptions,
   type ProjectorPollResult,
 } from "./naive-projector.js";
-export { resolveReducerBundlePath } from "./reducer-bundle-path.js";
+export {
+  assertRegularReducerBundle,
+  loadReducerBundle,
+  resolveReducerBundlePath,
+  type LoadedReducerBundle,
+  type ReducerBundleFileInfo,
+} from "./reducer-bundle-path.js";
