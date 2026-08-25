@@ -1,11 +1,10 @@
 import { z } from "zod";
 import { canonicalSha256 } from "./canonical-json.js";
+import { fingerprintCandidateProjection, fingerprintCurrentProjectionRow } from "./fingerprints.js";
 import {
-  fingerprintCandidateProjection,
-  fingerprintCurrentProjectionRow,
-  snapshotEventStream,
-} from "./fingerprints.js";
-import { replayOrderStreamDeterministically, type EvidenceOrderReducer } from "./replay.js";
+  isVerifiedReducerArtifactEvidence,
+  type VerifiedReducerArtifactEvidence,
+} from "./reducer-artifact.js";
 import {
   CanonicalProjectionValueSchema,
   CurrentProjectionRowSchema,
@@ -121,16 +120,11 @@ export type RepairEnvelope = z.infer<typeof RepairEnvelopeSchema>;
 export interface BuildRepairEnvelopeInput {
   planId: string;
   projectionName: string;
-  streamId: string;
-  headVersion: number;
-  events: readonly unknown[];
   runtime: unknown;
   currentRow: unknown;
-  reducer: EvidenceOrderReducer;
+  reducerEvidence: VerifiedReducerArtifactEvidence;
   clock: () => Date;
   ttlSeconds?: number;
-  maxEvents?: number;
-  maxCanonicalBytes?: number;
 }
 
 function unsignedEnvelope(envelope: RepairEnvelope): z.infer<typeof UnsignedRepairEnvelopeSchema> {
@@ -162,32 +156,29 @@ export function buildRepairEnvelope(input: BuildRepairEnvelopeInput): RepairEnve
     throw new Error("Evidence clock returned an invalid date");
   }
   const expires = new Date(created.getTime() + ttlSeconds * 1_000);
-  const stream = snapshotEventStream({
-    streamId: input.streamId,
-    headVersion: input.headVersion,
-    events: input.events,
-    ...(input.maxEvents === undefined ? {} : { maxEvents: input.maxEvents }),
-    ...(input.maxCanonicalBytes === undefined
-      ? {}
-      : { maxCanonicalBytes: input.maxCanonicalBytes }),
-  });
+  if (!isVerifiedReducerArtifactEvidence(input.reducerEvidence)) {
+    throw new Error("Repair envelope requires verified reducer artifact evidence");
+  }
   const runtime = RuntimeEvidenceSchema.parse(input.runtime);
+  if (runtime.reducerSha256 !== input.reducerEvidence.reducerSha256) {
+    throw new Error("Executed reducer digest does not match runtime attestation");
+  }
   const currentRow = fingerprintCurrentProjectionRow(input.currentRow);
-  const replay = replayOrderStreamDeterministically(stream.events, input.reducer);
   const currentValue = CurrentProjectionRowSchema.parse(currentRow.value);
   const { rowVersion, ...projectionValue } = currentValue;
-  const candidateRow = fingerprintCandidateProjection(replay.candidate.value);
+  const candidateRow = fingerprintCandidateProjection(input.reducerEvidence.candidate.value);
   const candidateValue = CanonicalProjectionValueSchema.parse(candidateRow.value);
+  const stream = input.reducerEvidence.stream;
 
   const unsigned = UnsignedRepairEnvelopeSchema.parse({
     schemaVersion: 1,
     planId: input.planId,
     projectionName: input.projectionName,
     stream: {
-      streamId: stream.evidence.streamId,
-      headVersion: stream.evidence.headVersion,
-      eventCount: stream.evidence.eventCount,
-      sha256: stream.evidence.sha256,
+      streamId: stream.streamId,
+      headVersion: stream.headVersion,
+      eventCount: stream.eventCount,
+      sha256: stream.sha256,
     },
     runtime,
     currentRow: {
@@ -201,10 +192,13 @@ export function buildRepairEnvelope(input: BuildRepairEnvelopeInput): RepairEnve
     },
     invariants: [
       { id: "stream_versions_contiguous", passed: true },
-      { id: "reducer_deterministic", passed: replay.deterministic },
+      {
+        id: "reducer_deterministic",
+        passed: input.reducerEvidence.reducerDeterministic,
+      },
       {
         id: "candidate_matches_stream_head",
-        passed: candidateValue.lastStreamVersion === stream.evidence.headVersion,
+        passed: candidateValue.lastStreamVersion === stream.headVersion,
       },
       {
         id: "root_projector_fix_active",

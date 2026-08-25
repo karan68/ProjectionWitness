@@ -26,9 +26,10 @@ time.
 
 ## Envelope
 
-`buildRepairEnvelope` receives raw bounded events, the current canonical database row, runtime
-manifest, exact reducer function, plan ID, and injected clock. It computes rather than accepts the
-four proof flags:
+`buildRepairEnvelope` receives the current canonical database row, runtime manifest, plan ID,
+injected clock, and opaque evidence returned by `runReducerArtifactEvidence`. It does not accept a
+separate reducer callback or caller-authored candidate. The executed artifact digest must equal the
+runtime manifest digest. The builder computes rather than accepts the four proof flags:
 
 - Contiguous stream versions.
 - Deterministic reducer output across two fresh runs.
@@ -40,7 +41,7 @@ checks nested current/candidate hashes, then computes `evidenceSha256` over the 
 with only `evidenceSha256` omitted. The fixed project vector is:
 
 ```text
-a3ec99f2204725612fb753e6ab2e66ef3b7cb3499818cd3cf4a3057a0f33fe95
+a512dadc2f53f1a9de2cff45b5fbc97d3c9d21e2eb27ed76942a5425e9e87f61
 ```
 
 This PR does not persist a repair plan or authorize a write. Plan immutability, transactional apply,
@@ -66,10 +67,13 @@ Build and execute the bounded fixture:
   .\tests\fixtures\reducer-evidence-input.json
 ```
 
-The runner checks the artifact digest before dynamic import. A regression test uses a mismatched
-module with an import-time file write and proves the side effect never executes. Event and canonical
-byte limits are trusted runner options, not fields the evidence JSON can raise. The CLI rejects an
-input file larger than 2 MiB before reading it.
+The runner reads the artifact once, checks those bytes, converts those same bytes to a data URL, and
+imports it inside a resource-limited worker. The parent terminates the worker at a trusted deadline
+(2 seconds by default). One regression artifact replaces its own filesystem path during import and
+proves the already-hashed bytes still determine the candidate; another loops forever and is
+terminated. A digest mismatch is rejected before any artifact code executes. Event, canonical-byte,
+and execution-time limits are trusted runner options, not fields the evidence JSON can raise. The
+CLI rejects an input file larger than 2 MiB before reading it.
 
 Verified fixture output:
 
@@ -91,8 +95,11 @@ unchanged.
 The repository includes `npm run evidence:trueforge-daytona -- <commit> <reducer-sha256>`. The
 launcher creates a named TrueForge session, requires the sandbox execution tool, downloads only the
 exact public commit, checksum-verifies Node 22.23.2, installs npm 10.9.9, runs `npm ci`, rebuilds the
-artifact, compares the runtime digest, and executes the bounded fixture. It then requires persisted
-`sandbox.created`, successful `turn.done`, the reducer digest, and deterministic output.
+artifact, compares the runtime digest, and executes the bounded fixture. Verification requires
+exactly one persisted system `exec` call whose command matches byte-for-byte, one linked successful
+response with exit code zero, one `sandbox.created`, one successful `turn.done`, and a complete
+schema-valid final JSON result matching the fixed stream, candidate, and reducer hashes. Model prose
+or arbitrary substrings cannot satisfy the verifier.
 
 The exact reducer run is not yet claimed as successful in Daytona:
 

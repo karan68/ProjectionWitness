@@ -31,11 +31,13 @@ export {
 } from "./repair-envelope.js";
 export {
   ReducerArtifactEvidenceInputSchema,
+  ReducerArtifactEvidenceResultSchema,
   runReducerArtifactEvidence,
   sha256File,
   type ReducerArtifactEvidenceInput,
   type ReducerArtifactEvidenceLimits,
   type ReducerArtifactEvidenceResult,
+  type VerifiedReducerArtifactEvidence,
 } from "./reducer-artifact.js";
 export {
   CanonicalOrderEventSchema,

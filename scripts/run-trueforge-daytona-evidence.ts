@@ -1,5 +1,6 @@
 import { TrueForge } from "@truefoundry/trueforge-sdk";
 import { z } from "zod";
+import { verifyTrueForgeReducerEvidence } from "./lib/verify-trueforge-reducer-evidence.js";
 
 const CommitShaSchema = z.string().regex(/^[0-9a-f]{40}$/);
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -56,7 +57,6 @@ const stream = await client.sessions.createTurnStream(
   { timeoutInSeconds: 900 },
 );
 
-let terminalStatus: string | undefined;
 for await (const event of stream) {
   if (event.type === "sandbox.created") {
     console.log(
@@ -69,29 +69,19 @@ for await (const event of stream) {
   } else if (event.type === "tool.response") {
     console.log(JSON.stringify({ event: event.type, content: event.content }));
   } else if (event.type === "turn.done") {
-    terminalStatus = event.state.status;
-    console.log(JSON.stringify({ event: event.type, status: terminalStatus }));
+    console.log(JSON.stringify({ event: event.type, status: event.state.status }));
   }
 }
 
 const persistedPage = await client.sessions.listEvents(sessionId);
 const persistedEvents = persistedPage.data.map((item) => item.event);
-const persistedToolOutput = persistedEvents
-  .filter((event) => event.type === "tool.response")
-  .map((event) => event.content)
-  .join("\n");
-if (!persistedEvents.some((event) => event.type === "sandbox.created")) {
-  throw new Error("TrueForge did not persist a sandbox.created event");
-}
-if (terminalStatus !== "done") {
-  throw new Error(`TrueForge turn did not complete successfully: ${terminalStatus ?? "missing"}`);
-}
-if (!persistedToolOutput.includes(`"reducerSha256":"${expectedReducerSha256}"`)) {
-  throw new Error("Persisted tool output does not contain the attested reducer digest");
-}
-if (!persistedToolOutput.includes('"reducerDeterministic":true')) {
-  throw new Error("Persisted tool output does not prove deterministic reducer execution");
-}
+const verifiedResult = verifyTrueForgeReducerEvidence(persistedEvents, {
+  command,
+  reducerSha256: expectedReducerSha256,
+  streamId: "ORD-DAYTONA-FIXTURE",
+  streamSha256: "e574755a41608e81eca0cc7bc33412c96d35f39be51d30fd4f77ff963e5fe903",
+  candidateSha256: "9c586ffed5924a0d8d5b7a517a633f0c264e6212b4fb995e00886cf102850fb2",
+});
 
 console.log(
   JSON.stringify({
@@ -99,6 +89,8 @@ console.log(
     sessionId,
     commitSha,
     reducerSha256: expectedReducerSha256,
+    streamSha256: verifiedResult.stream.sha256,
+    candidateSha256: verifiedResult.candidate.sha256,
     persistedEventTypes: persistedEvents.map((event) => event.type),
   }),
 );

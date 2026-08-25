@@ -1,10 +1,15 @@
 import {
   buildRepairEnvelope,
+  runReducerArtifactEvidence,
   verifyRepairEnvelope,
   type CanonicalOrderEvent,
+  type VerifiedReducerArtifactEvidence,
 } from "@projection-witness/evidence";
-import { reduceOrder } from "@projection-witness/reducer";
-import { describe, expect, it } from "vitest";
+import { buildReducerBundle } from "../../scripts/lib/reducer-bundle.js";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 const events: readonly CanonicalOrderEvent[] = [
   {
@@ -29,11 +34,30 @@ const events: readonly CanonicalOrderEvent[] = [
   },
 ];
 
+let temporaryDirectory: string;
+let reducerEvidence: VerifiedReducerArtifactEvidence;
+
+beforeAll(async () => {
+  temporaryDirectory = await mkdtemp(join(tmpdir(), "projection-witness-envelope-"));
+  const bundle = await buildReducerBundle(join(temporaryDirectory, "order-reducer.mjs"));
+  reducerEvidence = await runReducerArtifactEvidence(bundle.outputPath, {
+    schemaVersion: 1,
+    expectedReducerSha256: bundle.sha256,
+    streamId: "ORD-1042",
+    headVersion: 2,
+    events,
+  });
+});
+
+afterAll(async () => {
+  await rm(temporaryDirectory, { recursive: true, force: true });
+});
+
 function validEnvelope() {
   const runtime = {
     projectionName: "orders",
     generation: "2",
-    reducerSha256: "a".repeat(64),
+    reducerSha256: reducerEvidence.reducerSha256,
     sourceCommitSha: "0123456789abcdef",
     algorithmVersion: "gap-aware-v1",
     gapStrategy: "TRACKED_NON_BLOCKING",
@@ -50,12 +74,9 @@ function validEnvelope() {
   return buildRepairEnvelope({
     planId: "30000000-0000-4000-8000-000000000001",
     projectionName: "orders",
-    streamId: "ORD-1042",
-    headVersion: 2,
-    events,
     runtime,
     currentRow,
-    reducer: reduceOrder,
+    reducerEvidence,
     clock: () => new Date("2026-08-26T01:00:00.000Z"),
     ttlSeconds: 300,
   });
@@ -142,9 +163,36 @@ describe("repair evidence envelope", () => {
     ).toThrow(/IDs do not match/);
   });
 
+  it("refuses forged evidence and runtime digests unrelated to executed bytes", () => {
+    const envelope = validEnvelope();
+    const base = {
+      planId: envelope.planId,
+      projectionName: envelope.projectionName,
+      runtime: envelope.runtime,
+      currentRow: {
+        ...envelope.currentRow.value,
+        rowVersion: envelope.currentRow.rowVersion,
+      },
+      clock: () => new Date("2026-08-26T01:00:00.000Z"),
+    };
+    expect(() =>
+      buildRepairEnvelope({
+        ...base,
+        reducerEvidence: structuredClone(reducerEvidence),
+      } as Parameters<typeof buildRepairEnvelope>[0]),
+    ).toThrow(/requires verified reducer artifact evidence/);
+    expect(() =>
+      buildRepairEnvelope({
+        ...base,
+        runtime: { ...base.runtime, reducerSha256: "b".repeat(64) },
+        reducerEvidence,
+      }),
+    ).toThrow(/does not match runtime attestation/);
+  });
+
   it("has a stable project-specific evidence digest", () => {
     expect(validEnvelope().evidenceSha256).toBe(
-      "a3ec99f2204725612fb753e6ab2e66ef3b7cb3499818cd3cf4a3057a0f33fe95",
+      "a512dadc2f53f1a9de2cff45b5fbc97d3c9d21e2eb27ed76942a5425e9e87f61",
     );
   });
 });

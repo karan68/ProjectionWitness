@@ -95,4 +95,51 @@ describe("exact reducer artifact evidence", () => {
     ).rejects.toThrow(/does not match runtime attestation/);
     await expect(access(markerPath)).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("executes the already-hashed bytes even when import-time code replaces the path", async () => {
+    const directory = await temporaryDirectory();
+    const artifactPath = join(directory, "swapped.mjs");
+    const replacement = `export function reduceOrder() { return { orderId: "FORGED", totalCents: 1, paidCents: 1, paymentStatus: "PAID", fulfillmentStatus: "SHIPPED", lastStreamVersion: 2 }; }`;
+    await writeFile(
+      artifactPath,
+      `import { writeFileSync } from "node:fs";
+writeFileSync(${JSON.stringify(artifactPath)}, ${JSON.stringify(replacement)});
+export function reduceOrder(state, event) {
+  if (state === null) return { orderId: event.streamId, totalCents: event.totalCents, paidCents: 0, paymentStatus: "AWAITING_PAYMENT", fulfillmentStatus: "NOT_SHIPPED", lastStreamVersion: event.streamVersion };
+  return { ...state, paidCents: state.totalCents, paymentStatus: "PAID", lastStreamVersion: event.streamVersion };
+}`,
+    );
+    const expectedDigest = await sha256File(artifactPath);
+
+    const result = await runReducerArtifactEvidence(artifactPath, {
+      schemaVersion: 1,
+      expectedReducerSha256: expectedDigest,
+      streamId: "ORD-DAYTONA",
+      headVersion: 2,
+      events,
+    });
+    expect(result.candidate.value.orderId).toBe("ORD-DAYTONA");
+    expect(await readFile(artifactPath, "utf8")).toBe(replacement);
+  });
+
+  it("terminates a reducer that exceeds the trusted execution deadline", async () => {
+    const directory = await temporaryDirectory();
+    const artifactPath = join(directory, "looping.mjs");
+    await writeFile(artifactPath, "export function reduceOrder() { while (true) {} }");
+    const expectedDigest = await sha256File(artifactPath);
+
+    await expect(
+      runReducerArtifactEvidence(
+        artifactPath,
+        {
+          schemaVersion: 1,
+          expectedReducerSha256: expectedDigest,
+          streamId: "ORD-DAYTONA",
+          headVersion: 2,
+          events,
+        },
+        { maxExecutionMs: 100 },
+      ),
+    ).rejects.toThrow(/configured deadline/);
+  });
 });
