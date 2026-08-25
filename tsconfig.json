@@ -8,6 +8,9 @@
   "references": [
     { "path": "./packages/domain" },
     { "path": "./packages/reducer" },
-    { "path": "./packages/database" }
+    { "path": "./packages/database" },
+    { "path": "./apps/api" },
+    { "path": "./apps/projector" },
+    { "path": "./apps/demo-driver" }
   ]
 }
