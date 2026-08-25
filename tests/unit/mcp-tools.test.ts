@@ -67,9 +67,13 @@ describe("MCP public API boundary", () => {
   it("uses the persisted plan stream for row and public verification", async () => {
     const query = vi
       .fn()
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [{ status: "APPLIED", stream_id: "ORD-A" }] })
       .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
       .mockResolvedValueOnce({ rows: [] });
+    const release = vi.fn();
+    const connect = vi.fn(async () => ({ query, release }));
     vi.stubGlobal(
       "fetch",
       vi.fn(
@@ -80,19 +84,22 @@ describe("MCP public API boundary", () => {
     const planId = "018f47b2-7c6a-7ca4-b75a-4b748f41e001";
 
     await expect(
-      tools({ query } as unknown as Pool).verifyProjectionRepair({ planId }),
+      tools({ connect } as unknown as Pool).verifyProjectionRepair({ planId }),
     ).resolves.toEqual({
       planStatus: "APPLIED",
       auditReceiptSha256: null,
       rowMatchesAudit: null,
       publicStatusCode: 200,
     });
-    expect(query.mock.calls[2]?.[1]).toEqual(["ORD-A"]);
+    expect(query.mock.calls[0]?.[0]).toBe("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    expect(query.mock.calls[3]?.[1]).toEqual(["ORD-A"]);
+    expect(query.mock.calls[4]?.[0]).toBe("COMMIT");
+    expect(release).toHaveBeenCalledOnce();
     expect(fetch).toHaveBeenCalledWith(new URL("http://127.0.0.1:3000/orders/ORD-A"), {
       signal: expect.any(AbortSignal),
     });
     await expect(
-      tools({ query } as unknown as Pool).verifyProjectionRepair({ planId, orderId: "ORD-B" }),
+      tools({ connect } as unknown as Pool).verifyProjectionRepair({ planId, orderId: "ORD-B" }),
     ).rejects.toThrow();
   });
 });
