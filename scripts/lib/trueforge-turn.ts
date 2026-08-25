@@ -17,12 +17,22 @@ export const TurnCheckpointSchema = z
 export type TurnCheckpoint = z.infer<typeof TurnCheckpointSchema>;
 
 const TurnEventSchema = z.object({ type: z.string().min(1).max(128) }).passthrough();
+const StreamEventSchema = z
+  .object({
+    data: z.unknown(),
+    id: z.string().regex(/^[1-9][0-9]*$/),
+  })
+  .passthrough();
 const TurnStateSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("running") }).passthrough(),
   z.object({ status: z.literal("done") }).passthrough(),
   z.object({ status: z.literal("cancelled") }).passthrough(),
   z.object({ status: z.literal("error") }).passthrough(),
 ]);
+
+interface TrueForgeTurnStream extends AsyncIterable<unknown> {
+  withMetadata(): AsyncIterable<{ data: unknown; id?: string }>;
+}
 
 interface TrueForgeTurnClient {
   sessions: {
@@ -31,12 +41,25 @@ interface TrueForgeTurnClient {
       sessionId: string,
       turnId: string,
       request: { afterSequenceNumber: number },
-    ): Promise<AsyncIterable<unknown>>;
+    ): Promise<TrueForgeTurnStream>;
     listTurnEvents(
       sessionId: string,
       turnId: string,
       request: { limit: number; order: "asc" },
     ): Promise<AsyncIterable<unknown>>;
+  };
+}
+
+interface TrueForgeSessionTurnClient extends TrueForgeTurnClient {
+  sessions: TrueForgeTurnClient["sessions"] & {
+    create(request: { agent: { name: string } }): Promise<{ data: { id: string } }>;
+    createTurn(
+      sessionId: string,
+      request: {
+        input: Array<{ type: "user.message"; content: string }>;
+        previousTurnId: "none";
+      },
+    ): Promise<{ data: { id: string } }>;
   };
 }
 
@@ -71,27 +94,61 @@ export async function writeTurnCheckpoint(
 }
 
 export async function consumeTurnStream(
-  stream: AsyncIterable<unknown>,
+  stream: TrueForgeTurnStream,
   inputCheckpoint: TurnCheckpoint,
   persist: (checkpoint: TurnCheckpoint) => Promise<void>,
   onEvent: (event: z.infer<typeof TurnEventSchema>) => Promise<void> = async () => undefined,
 ): Promise<TurnCheckpoint> {
   let checkpoint = TurnCheckpointSchema.parse(inputCheckpoint);
   let consumed = 0;
-  for await (const inputEvent of stream) {
+  for await (const inputEvent of stream.withMetadata()) {
     consumed += 1;
     if (consumed > MaximumTurnEvents) {
       throw new Error("TrueForge turn stream exceeds the event limit");
     }
-    const event = TurnEventSchema.parse(inputEvent);
+    const streamEvent = StreamEventSchema.parse(inputEvent);
+    const sequenceNumber = Number(streamEvent.id);
+    if (
+      !Number.isSafeInteger(sequenceNumber) ||
+      sequenceNumber !== checkpoint.lastSequenceNumber + 1
+    ) {
+      throw new Error("TrueForge turn stream sequence is not contiguous");
+    }
+    const event = TurnEventSchema.parse(streamEvent.data);
+    await onEvent(event);
     checkpoint = TurnCheckpointSchema.parse({
       ...checkpoint,
-      lastSequenceNumber: checkpoint.lastSequenceNumber + 1,
+      lastSequenceNumber: sequenceNumber,
     });
     await persist(checkpoint);
-    await onEvent(event);
   }
   return checkpoint;
+}
+
+export async function startTurn(
+  client: TrueForgeSessionTurnClient,
+  agentNameInput: string,
+  promptInput: string,
+  persist: (checkpoint: TurnCheckpoint) => Promise<void>,
+  onEvent: (event: z.infer<typeof TurnEventSchema>) => Promise<void> = async () => undefined,
+): Promise<TurnCheckpoint> {
+  const agentName = z.string().trim().min(1).max(128).parse(agentNameInput);
+  const prompt = z.string().trim().min(1).max(32_768).parse(promptInput);
+  const session = await client.sessions.create({ agent: { name: agentName } });
+  const turn = await client.sessions.createTurn(session.data.id, {
+    input: [{ type: "user.message", content: prompt }],
+    previousTurnId: "none",
+  });
+  const checkpoint = TurnCheckpointSchema.parse({
+    sessionId: session.data.id,
+    turnId: turn.data.id,
+    lastSequenceNumber: 0,
+  });
+  await persist(checkpoint);
+  const stream = await client.sessions.subscribeToTurn(checkpoint.sessionId, checkpoint.turnId, {
+    afterSequenceNumber: 0,
+  });
+  return consumeTurnStream(stream, checkpoint, persist, onEvent);
 }
 
 export async function collectPersistedTurnEvents(

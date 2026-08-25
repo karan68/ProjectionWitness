@@ -4,7 +4,7 @@ import { z } from "zod";
 import { verifyApplyApprovalBinding } from "./lib/trueforge-agent.js";
 import {
   collectPersistedTurnEvents,
-  consumeTurnStream,
+  startTurn,
   writeTurnCheckpoint,
 } from "./lib/trueforge-turn.js";
 
@@ -19,22 +19,13 @@ const checkpointPath = resolve(
   environmentVariable("TRUEFORGE_CHECKPOINT_PATH") ?? ".projection-witness/turn.json",
 );
 const client = new TrueForge({ baseUrl });
-const session = await client.sessions.create({ agent: { name: agentName } });
-const turn = await client.sessions.createTurn(session.data.id, {
-  input: [{ type: "user.message", content: prompt }],
-  previousTurnId: "none",
-});
-let checkpoint = {
-  sessionId: session.data.id,
-  turnId: turn.data.id,
-  lastSequenceNumber: 0,
-};
-await writeTurnCheckpoint(checkpointPath, checkpoint);
+let activeSessionId = "";
+let activeTurnId = "";
 
 async function reportEvent(event: { type: string }) {
   if (event.type === "tool.approval_required") {
     const persisted = await collectPersistedTurnEvents(
-      await client.sessions.listTurnEvents(checkpoint.sessionId, checkpoint.turnId, {
+      await client.sessions.listTurnEvents(activeSessionId, activeTurnId, {
         limit: 100,
         order: "asc",
       }),
@@ -46,13 +37,15 @@ async function reportEvent(event: { type: string }) {
   console.log(JSON.stringify({ event: event.type }));
 }
 
-const stream = await client.sessions.subscribeToTurn(checkpoint.sessionId, checkpoint.turnId, {
-  afterSequenceNumber: checkpoint.lastSequenceNumber,
-});
-checkpoint = await consumeTurnStream(
-  stream,
-  checkpoint,
-  async (next) => writeTurnCheckpoint(checkpointPath, next),
+const checkpoint = await startTurn(
+  client,
+  agentName,
+  prompt,
+  async (next) => {
+    activeSessionId = next.sessionId;
+    activeTurnId = next.turnId;
+    await writeTurnCheckpoint(checkpointPath, next);
+  },
   reportEvent,
 );
 console.log(

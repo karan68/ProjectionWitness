@@ -305,6 +305,139 @@ export function verifyApplyApprovalBinding(events: readonly unknown[], approvalI
   };
 }
 
+export function verifyTrueForgeApprovedRepair(
+  events: readonly unknown[],
+  expectedInput: {
+    planId: string;
+    streamId: string;
+    toolCallId: string;
+    receiptSha256: string;
+  },
+) {
+  const records = z.array(z.unknown()).max(1_000).parse(events);
+  const expected = z
+    .object({
+      planId: z.uuid(),
+      streamId: z.string().trim().min(1).max(128),
+      toolCallId: z.string().min(1).max(256),
+      receiptSha256: z.string().regex(/^[0-9a-f]{64}$/),
+    })
+    .strict()
+    .parse(expectedInput);
+  const approvalEvent = records.find((event) => {
+    const parsed = ApprovalRequiredSchema.safeParse(event);
+    return parsed.success && parsed.data.toolCalls.some((call) => call.id === expected.toolCallId);
+  });
+  const binding = verifyApplyApprovalBinding(records, approvalEvent);
+  if (
+    binding.toolCallId !== expected.toolCallId ||
+    binding.arguments.planId !== expected.planId ||
+    binding.arguments.streamId !== expected.streamId
+  ) {
+    throw new Error("Approved apply binding does not match the expected plan and stream");
+  }
+
+  const allowEvents = records.filter((event) => {
+    const parsed = z
+      .object({
+        type: z.literal("turn.created"),
+        input: z.array(z.unknown()).optional(),
+      })
+      .passthrough()
+      .safeParse(event);
+    if (!parsed.success) {
+      return false;
+    }
+    return (parsed.data.input ?? []).some(
+      (item) =>
+        z
+          .object({
+            type: z.literal("user.tool_approval"),
+            toolCallId: z.literal(expected.toolCallId),
+            approval: z.object({ status: z.literal("allow") }).passthrough(),
+          })
+          .passthrough()
+          .safeParse(item).success,
+    );
+  });
+  if (allowEvents.length !== 1) {
+    throw new Error("Expected exactly one persisted native allow decision");
+  }
+
+  const applyResponses = records.flatMap((event) => {
+    const parsed = z
+      .object({
+        type: z.literal("tool.response"),
+        toolCallId: z.literal(expected.toolCallId),
+        content: z.string().max(1_048_576),
+      })
+      .passthrough()
+      .safeParse(event);
+    return parsed.success ? [parsed.data] : [];
+  });
+  if (applyResponses.length !== 1) {
+    throw new Error("Expected exactly one persisted response for the approved apply call");
+  }
+  const receipt = z
+    .object({
+      status: z.literal("APPLIED"),
+      planId: z.literal(expected.planId),
+      auditId: z.uuid(),
+      receiptSha256: z.literal(expected.receiptSha256),
+    })
+    .strict()
+    .parse(JSON.parse(applyResponses[0]?.content ?? "null"));
+
+  const responseValues = records.flatMap((event) => {
+    const parsed = z
+      .object({ type: z.literal("tool.response"), content: z.string().max(1_048_576) })
+      .passthrough()
+      .safeParse(event);
+    if (!parsed.success) {
+      return [];
+    }
+    try {
+      return [JSON.parse(parsed.data.content) as unknown];
+    } catch {
+      return [];
+    }
+  });
+  const verifiedPlan = responseValues.some(
+    (value) =>
+      z
+        .object({
+          planStatus: z.literal("APPLIED"),
+          auditReceiptSha256: z.literal(expected.receiptSha256),
+          rowMatchesAudit: z.literal(true),
+          publicStatusCode: z.literal(200),
+        })
+        .passthrough()
+        .safeParse(value).success,
+  );
+  const verifiedPublicState = responseValues.some(
+    (value) =>
+      z
+        .object({
+          statusCode: z.literal(200),
+          body: z
+            .object({
+              orderId: z.literal(expected.streamId),
+              paymentStatus: z.literal("PAID"),
+              lastStreamVersion: z.number().int().positive().safe(),
+            })
+            .passthrough(),
+        })
+        .passthrough()
+        .safeParse(value).success,
+  );
+  if (!verifiedPlan || !verifiedPublicState) {
+    throw new Error(
+      "Persisted post-apply verification does not prove audit, row, and public state",
+    );
+  }
+  return { binding, receipt };
+}
+
 export function verifyTrueForgeReadSmoke(events: readonly unknown[], expectedOrderId: string) {
   const boundedEvents = z.array(z.unknown()).max(1_000).parse(events);
   const orderId = z.string().trim().min(1).max(128).parse(expectedOrderId);

@@ -2,6 +2,7 @@ import {
   loadProjectionWitnessAgentManifest,
   registerProjectionWitnessAgent,
   verifyApplyApprovalBinding,
+  verifyTrueForgeApprovedRepair,
   verifyTrueForgeReadSmoke,
 } from "../../scripts/lib/trueforge-agent.js";
 import { fileURLToPath } from "node:url";
@@ -265,5 +266,95 @@ describe("TrueForge saved-agent contract", () => {
         "MISSING-TRUEFORGE-SMOKE",
       ),
     ).toThrow(/unexpectedly requested/);
+  });
+
+  it("verifies native allow, exact apply receipt, audit match, and public paid state", () => {
+    const planId = "018f47b2-7c6a-7ca4-b75a-4b748f41e001";
+    const receiptSha256 = "f".repeat(64);
+    const arguments_ = {
+      planId,
+      projectionName: "orders",
+      streamId: "ORD-1",
+      streamSha256: "a".repeat(64),
+      currentRowVersion: "1",
+      currentRowSha256: "b".repeat(64),
+      reducerSha256: "c".repeat(64),
+      runtimeGeneration: "2",
+      evidenceSha256: "d".repeat(64),
+      expiresAt: "2099-01-01T00:00:00.000Z",
+    };
+    const events = [
+      {
+        id: "source-1",
+        type: "model.message",
+        threadId: "main",
+        toolCalls: [
+          {
+            id: "apply-1",
+            function: { name: "apply_projection_repair", arguments: JSON.stringify(arguments_) },
+            toolInfo: {
+              type: "mcp",
+              serverName: "projection-witness-write",
+              name: "apply_projection_repair",
+            },
+          },
+        ],
+      },
+      {
+        type: "tool.approval_required",
+        threadId: "main",
+        toolCalls: [{ id: "apply-1", sourceEventId: "source-1" }],
+      },
+      {
+        type: "turn.created",
+        input: [
+          {
+            type: "user.tool_approval",
+            toolCallId: "apply-1",
+            approval: { status: "allow" },
+          },
+        ],
+      },
+      {
+        type: "tool.response",
+        toolCallId: "apply-1",
+        content: JSON.stringify({
+          status: "APPLIED",
+          planId,
+          auditId: "018f47b2-7c6a-7ca4-b75a-4b748f41e002",
+          receiptSha256,
+        }),
+      },
+      {
+        type: "tool.response",
+        toolCallId: "verify-1",
+        content: JSON.stringify({
+          planStatus: "APPLIED",
+          auditReceiptSha256: receiptSha256,
+          rowMatchesAudit: true,
+          publicStatusCode: 200,
+        }),
+      },
+      {
+        type: "tool.response",
+        toolCallId: "public-1",
+        content: JSON.stringify({
+          statusCode: 200,
+          body: { orderId: "ORD-1", paymentStatus: "PAID", lastStreamVersion: 2 },
+        }),
+      },
+    ];
+
+    expect(
+      verifyTrueForgeApprovedRepair(events, {
+        planId,
+        streamId: "ORD-1",
+        toolCallId: "apply-1",
+        receiptSha256,
+      }),
+    ).toMatchObject({
+      binding: { arguments: arguments_ },
+      receipt: { status: "APPLIED", planId, receiptSha256 },
+    });
   });
 });

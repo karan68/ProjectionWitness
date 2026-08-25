@@ -12,6 +12,8 @@
     { "path": "../projector" },
     { "path": "../../packages/database" },
     { "path": "../../packages/domain" },
+    { "path": "../../packages/evidence" },
+    { "path": "../../packages/repair" },
     { "path": "../../packages/reducer" }
   ]
 }
