@@ -6,10 +6,10 @@ import {
 } from "@projection-witness/database";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { pathToFileURL } from "node:url";
 import { GapAwareOrderProjector, type OrderReducer } from "./gap-aware-projector.js";
+import { resolveReducerBundlePath } from "./reducer-bundle-path.js";
 
 function requiredEnvironmentVariable(name: string): string {
   const value = process.env[name]?.trim();
@@ -35,7 +35,9 @@ const databaseUrl = requiredEnvironmentVariable("DATABASE_URL_PROJECTOR");
 const projectionName = environmentVariable("PROJECTION_NAME")?.trim() || "orders";
 const generation = requiredEnvironmentVariable("PROJECTOR_GENERATION");
 const sourceCommitSha = requiredEnvironmentVariable("SOURCE_COMMIT_SHA");
-const reducerBundlePath = resolve(requiredEnvironmentVariable("REDUCER_BUNDLE_PATH"));
+const reducerBundlePath = await resolveReducerBundlePath(
+  requiredEnvironmentVariable("REDUCER_BUNDLE_PATH"),
+);
 const reducerBytes = await readFile(reducerBundlePath);
 const reducerSha256 = createHash("sha256").update(reducerBytes).digest("hex");
 const reducerModule = (await import(pathToFileURL(reducerBundlePath).href)) as {

@@ -8,9 +8,6 @@ CREATE TABLE projection_runtime (
     registered_at timestamptz NOT NULL DEFAULT clock_timestamp()
 );
 
-CREATE INDEX projection_gaps_position_idx
-    ON projection_gaps (global_position, projection_name);
-
 REVOKE ALL ON projection_runtime FROM PUBLIC;
 
 GRANT SELECT ON projection_runtime TO pw_api;

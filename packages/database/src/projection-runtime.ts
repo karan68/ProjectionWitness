@@ -3,10 +3,18 @@ import { z } from "zod";
 
 export const GapAwareAlgorithmVersion = "gap-aware-v1";
 export const TrackedNonBlockingGapStrategy = "TRACKED_NON_BLOCKING";
+const PostgresBigintMaximum = 9_223_372_036_854_775_807n;
+
+const PositivePostgresBigintSchema = z
+  .string()
+  .regex(/^[1-9][0-9]*$/)
+  .refine((value) => BigInt(value) <= PostgresBigintMaximum, {
+    message: "Runtime generation must fit a positive signed 64-bit PostgreSQL bigint",
+  });
 
 const ProjectionRuntimeManifestSchema = z.object({
   projectionName: z.string().trim().min(1).max(128),
-  generation: z.string().regex(/^[1-9][0-9]*$/),
+  generation: PositivePostgresBigintSchema,
   reducerSha256: z.string().regex(/^[0-9a-f]{64}$/),
   sourceCommitSha: z.string().trim().min(1).max(128),
   algorithmVersion: z.string().trim().min(1).max(128),
