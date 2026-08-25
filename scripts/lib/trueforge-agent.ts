@@ -301,3 +301,107 @@ export function verifyApplyApprovalBinding(events: readonly unknown[], approvalI
     arguments: ApplyProjectionRepairInputSchema.parse(JSON.parse(call.function.arguments)),
   };
 }
+
+export function verifyTrueForgeReadSmoke(events: readonly unknown[], expectedOrderId: string) {
+  const boundedEvents = z.array(z.unknown()).max(1_000).parse(events);
+  const orderId = z.string().trim().min(1).max(128).parse(expectedOrderId);
+  const records = boundedEvents.map((event) =>
+    z
+      .object({ type: z.string().min(1).max(128) })
+      .passthrough()
+      .parse(event),
+  );
+  const initializeEvents = records.filter((event) => event.type === "mcp.initialize");
+  if (initializeEvents.length !== 1) {
+    throw new Error("Expected exactly one persisted MCP initialization event");
+  }
+  const initializedNames = z
+    .object({
+      mcpServers: z.array(z.object({ name: z.string() }).passthrough()).length(2),
+    })
+    .passthrough()
+    .parse(initializeEvents[0])
+    .mcpServers.map((server) => server.name);
+  if (
+    JSON.stringify(initializedNames) !==
+    JSON.stringify(["projection-witness-read", "projection-witness-write"])
+  ) {
+    throw new Error("Persisted MCP initialization does not match both configured connectors");
+  }
+  if (records.some((event) => event.type === "tool.approval_required")) {
+    throw new Error("Read smoke unexpectedly requested tool approval");
+  }
+
+  const toolCalls = records.flatMap((event) => {
+    if (event.type !== "model.message") {
+      return [];
+    }
+    return (
+      z
+        .object({ toolCalls: z.array(z.unknown()).optional() })
+        .passthrough()
+        .parse(event).toolCalls ?? []
+    );
+  });
+  if (toolCalls.length !== 1) {
+    throw new Error("Expected exactly one persisted read smoke tool call");
+  }
+  const toolCall = z
+    .object({
+      id: z.string().min(1).max(256),
+      function: z
+        .object({
+          name: z.literal("find_projection_case"),
+          arguments: z.string().max(131_072),
+        })
+        .strict(),
+      toolInfo: z
+        .object({
+          type: z.literal("mcp"),
+          name: z.literal("find_projection_case"),
+          serverName: z.literal("projection-witness-read"),
+        })
+        .passthrough(),
+    })
+    .passthrough()
+    .parse(toolCalls[0]);
+  const arguments_ = z
+    .object({ orderId: z.literal(orderId) })
+    .strict()
+    .parse(JSON.parse(toolCall.function.arguments));
+
+  const responses = records
+    .filter((event) => event.type === "tool.response")
+    .map((event) =>
+      z
+        .object({
+          toolCallId: z.string().min(1).max(256),
+          content: z.string().max(1_048_576),
+        })
+        .passthrough()
+        .parse(event),
+    );
+  if (responses.length !== 1 || responses[0]?.toolCallId !== toolCall.id) {
+    throw new Error("Read smoke response does not match the exact persisted tool call");
+  }
+  const result = z
+    .object({
+      found: z.literal(false),
+      streamExists: z.literal(false),
+      projectionExists: z.literal(false),
+    })
+    .strict()
+    .parse(JSON.parse(responses[0].content));
+  const doneEvents = records.filter((event) => event.type === "turn.done");
+  if (doneEvents.length !== 1) {
+    throw new Error("Expected exactly one persisted turn.done event");
+  }
+  z.object({
+    state: z
+      .object({ status: z.literal("done"), requiredActions: z.array(z.unknown()).length(0) })
+      .passthrough(),
+  })
+    .passthrough()
+    .parse(doneEvents[0]);
+  return { arguments: arguments_, result, toolCallId: toolCall.id };
+}

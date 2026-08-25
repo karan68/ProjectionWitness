@@ -39,6 +39,7 @@
     "trueforge:reconnect": "tsx scripts/reconnect-agent-turn.ts",
     "trueforge:register": "tsx scripts/register-agent.ts",
     "trueforge:run": "tsx scripts/run-agent-turn.ts",
+    "trueforge:verify-read-smoke": "tsx scripts/verify-trueforge-read-smoke.ts",
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",

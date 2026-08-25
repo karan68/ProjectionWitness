@@ -108,7 +108,8 @@ limits, startup command, and official-client smoke test. Native TrueForge approv
 follow-up work. The checked-in TrueForge manifest, projection repair sandbox skill, idempotent
 registration client, approval-event verifier, and sequence-based reconnect client are documented
 in [docs/TRUEFORGE.md](docs/TRUEFORGE.md); their deterministic contract tests pass, while a real
-native approval run is not yet claimed.
+registration, read-tool turn, and completed-turn reconnect now pass at an exact public commit. A
+real native approval run is not yet claimed.
 
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal

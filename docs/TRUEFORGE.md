@@ -84,8 +84,37 @@ Reconnect first calls `getTurn`. A running turn is subscribed with the saved exc
 The reconnect path has no create-turn method and cannot silently replace the original work.
 
 The saved-agent manifest, registration behavior, approval binding, atomic checkpoint, and both
-reconnect branches are covered by deterministic unit tests. Real connector registration and a
-persisted native approval event are not claimed until the credentialed run is recorded below.
+reconnect branches are covered by deterministic unit tests.
+
+### Real saved-agent read and reconnect evidence
+
+On 2026-08-25, TrueForge `0.1.4` and the MCP connectors ran together on WSL loopback from public
+commit `ccc886fa96cc9b43c56da91b0d3ddc9f88599103`. Registration first created and then idempotently
+updated immutable agent ID `01m0x6xj4e29s239dd9kjryb8x`. Both registrations succeeded only after
+TrueForge listed the exact seven-tool read surface and one-tool write surface.
+
+Saved-agent session `01m0x6y8ekwhp85rk1s6rnqbkr`, turn
+`01m0x6y8f01n8t77n8tc9mw822.local` initialized both Streamable HTTP connectors, called exactly
+`projection-witness-read/find_projection_case` with order ID `MISSING-TRUEFORGE-SMOKE`, and
+persisted the structured result `found=false`, `streamExists=false`, `projectionExists=false`.
+The persisted turn contains no approval event, staging call, or write call and ends with
+`requiredActions=[]`.
+
+After the first client exited, `trueforge:reconnect` used its saved session, turn, and sequence
+cursor `15`. `getTurn` found the turn complete, so the client rebuilt the same six persisted event
+types ending in `turn.done`; it did not create another turn. This is real reconnect evidence for a
+completed turn. A disconnect while the turn is still running remains to be captured separately.
+
+The event verifier can be rerun while the local TrueForge store is available:
+
+```powershell
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run trueforge:verify-read-smoke -- `
+  01m0x6y8ekwhp85rk1s6rnqbkr `
+  01m0x6y8f01n8t77n8tc9mw822.local `
+  MISSING-TRUEFORGE-SMOKE
+```
+
+A persisted native approval/denial event and an apply attempt are not yet claimed.
 
 ## Daytona smoke evidence
 

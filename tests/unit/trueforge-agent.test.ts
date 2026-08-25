@@ -2,6 +2,7 @@ import {
   loadProjectionWitnessAgentManifest,
   registerProjectionWitnessAgent,
   verifyApplyApprovalBinding,
+  verifyTrueForgeReadSmoke,
 } from "../../scripts/lib/trueforge-agent.js";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
@@ -207,5 +208,51 @@ describe("TrueForge saved-agent contract", () => {
         approval,
       ),
     ).toThrow();
+  });
+
+  it("verifies one persisted read smoke with both connectors and no approval", () => {
+    const toolCall = {
+      id: "call-1",
+      function: {
+        name: "find_projection_case",
+        arguments: JSON.stringify({ orderId: "MISSING-TRUEFORGE-SMOKE" }),
+      },
+      toolInfo: {
+        type: "mcp",
+        serverId: "projection-witness-read",
+        serverName: "projection-witness-read",
+        name: "find_projection_case",
+      },
+    };
+    const events = [
+      {
+        type: "mcp.initialize",
+        mcpServers: [{ name: "projection-witness-read" }, { name: "projection-witness-write" }],
+      },
+      { type: "model.message", toolCalls: [toolCall] },
+      {
+        type: "tool.response",
+        toolCallId: "call-1",
+        content: JSON.stringify({
+          found: false,
+          streamExists: false,
+          projectionExists: false,
+        }),
+      },
+      { type: "model.message", content: "No repair was staged or applied." },
+      { type: "turn.done", state: { status: "done", requiredActions: [] } },
+    ];
+
+    expect(verifyTrueForgeReadSmoke(events, "MISSING-TRUEFORGE-SMOKE")).toEqual({
+      arguments: { orderId: "MISSING-TRUEFORGE-SMOKE" },
+      result: { found: false, streamExists: false, projectionExists: false },
+      toolCallId: "call-1",
+    });
+    expect(() =>
+      verifyTrueForgeReadSmoke(
+        [...events, { type: "tool.approval_required" }],
+        "MISSING-TRUEFORGE-SMOKE",
+      ),
+    ).toThrow(/unexpectedly requested/);
   });
 });
