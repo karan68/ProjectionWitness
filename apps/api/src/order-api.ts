@@ -81,8 +81,6 @@ export function buildOrderApi(pool: Pool, options: OrderApiOptions = {}): Fastif
         sourceCommitSha: runtime.source_commit_sha,
         reducerSha256: runtime.reducer_sha256,
         projectorGeneration: runtime.generation,
-        algorithmVersion: runtime.algorithm_version,
-        gapStrategy: runtime.gap_strategy,
       };
     } catch {
       return reply.code(503).send({ code: "DATABASE_UNAVAILABLE" });

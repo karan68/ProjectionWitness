@@ -1309,6 +1309,7 @@ Stable error codes:
 |---|---|---|
 | `CASE_NOT_FOUND` | Unknown order/stream | Correct identifier |
 | `AMBIGUOUS_CASE` | Multiple matches | Ask user |
+| `DATABASE_UNAVAILABLE` | Public API cannot query PostgreSQL | Retry after database recovery |
 | `INVALID_EVENT_STREAM` | Schema/version/invariant failure | Escalate; no repair |
 | `RUNTIME_UNATTESTED` | Missing or mismatched runtime identity | Fix deployment attestation |
 | `ROOT_CAUSE_UNSAFE` | Gap-aware projector not active | Deploy root fix first |

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-type DatabaseAction = "config" | "down" | "reset" | "serve" | "up";
+type DatabaseAction = "config" | "demo-reset" | "down" | "reset" | "serve" | "up";
 
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const composeFile = resolve(projectRoot, "docker-compose.yml");
@@ -10,6 +10,7 @@ const composeFile = resolve(projectRoot, "docker-compose.yml");
 function parseAction(value: string | undefined): DatabaseAction {
   if (
     value === "config" ||
+    value === "demo-reset" ||
     value === "down" ||
     value === "reset" ||
     value === "serve" ||
@@ -18,7 +19,7 @@ function parseAction(value: string | undefined): DatabaseAction {
     return value;
   }
 
-  throw new Error("Usage: tsx scripts/docker-compose.ts <config|down|reset|serve|up>");
+  throw new Error("Usage: tsx scripts/docker-compose.ts <config|demo-reset|down|reset|serve|up>");
 }
 
 function toWslPath(windowsPath: string): string {
@@ -111,6 +112,10 @@ async function main(): Promise<void> {
 
   if (getEnvironmentVariable("NODE_ENV") === "production") {
     throw new Error("Database reset is disabled when NODE_ENV=production");
+  }
+
+  if (action === "demo-reset" && getEnvironmentVariable("DEMO_MODE") !== "true") {
+    throw new Error("DEMO_MODE=true is required for demo database reset");
   }
 
   if (getEnvironmentVariable("CONFIRM_DATABASE_RESET") !== "projection-witness-local") {

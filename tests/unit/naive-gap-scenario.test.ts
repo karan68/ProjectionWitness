@@ -42,6 +42,25 @@ describe("naive gap coordination", () => {
     expect(() => assertNaiveGapProof(ValidProof)).not.toThrow();
   });
 
+  it("normalizes padded identifiers once", () => {
+    expect(() =>
+      assertNaiveGapProof(ValidProof, {
+        projectionName: " orders ",
+        targetOrderId: " ORD-1042 ",
+        unrelatedOrderId: " ORD-2048 ",
+      }),
+    ).not.toThrow();
+  });
+
+  it("rejects equal target and unrelated identifiers after normalization", () => {
+    expect(() =>
+      assertNaiveGapProof(ValidProof, {
+        targetOrderId: " ORD-1042 ",
+        unrelatedOrderId: "ORD-1042",
+      }),
+    ).toThrow(/must be different/);
+  });
+
   it.each([
     ["customer paid amount", { customerState: { ...ValidProof.customerState, paidCents: 1 } }],
     [

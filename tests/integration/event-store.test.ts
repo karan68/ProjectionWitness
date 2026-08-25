@@ -379,25 +379,30 @@ describeWithDatabase("PostgreSQL order event store", () => {
       expectedVersion: 0,
       event: { type: "OrderPlaced", totalCents: 100 },
     });
-    await gateReached.promise;
+    try {
+      await gateReached.promise;
 
-    const committedLaterPosition = await eventStore.append({
-      streamId: "ORD-GATED-B",
-      expectedVersion: 0,
-      event: { type: "OrderPlaced", totalCents: 200 },
-    });
+      const committedLaterPosition = await eventStore.append({
+        streamId: "ORD-GATED-B",
+        expectedVersion: 0,
+        event: { type: "OrderPlaced", totalCents: 200 },
+      });
 
-    expect(pendingPosition).toBeDefined();
-    expect(BigInt(pendingPosition ?? "0")).toBeLessThan(
-      BigInt(committedLaterPosition.globalPosition),
-    );
-    expect(await eventStore.loadStream("ORD-GATED-A")).toEqual([]);
-    expect(await eventStore.loadStream("ORD-GATED-B")).toHaveLength(1);
+      expect(pendingPosition).toBeDefined();
+      expect(BigInt(pendingPosition ?? "0")).toBeLessThan(
+        BigInt(committedLaterPosition.globalPosition),
+      );
+      expect(await eventStore.loadStream("ORD-GATED-A")).toEqual([]);
+      expect(await eventStore.loadStream("ORD-GATED-B")).toHaveLength(1);
 
-    releaseCommit.resolve();
-    const committedEarlierPosition = await pendingAppend;
-    expect(committedEarlierPosition.globalPosition).toBe(pendingPosition);
-    expect(await eventStore.loadStream("ORD-GATED-A")).toHaveLength(1);
+      releaseCommit.resolve();
+      const committedEarlierPosition = await pendingAppend;
+      expect(committedEarlierPosition.globalPosition).toBe(pendingPosition);
+      expect(await eventStore.loadStream("ORD-GATED-A")).toHaveLength(1);
+    } finally {
+      releaseCommit.resolve();
+      await pendingAppend.catch(() => undefined);
+    }
   });
 
   it("authenticates every runtime identity directly", async () => {

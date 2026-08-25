@@ -9,10 +9,12 @@ import { NaiveOrderProjector } from "@projection-witness/projector";
 import { reduceOrder } from "@projection-witness/reducer";
 import { setTimeout as delay } from "node:timers/promises";
 import type { Pool } from "pg";
+import { z } from "zod";
 
 const DefaultProjectionName = "orders";
 const DefaultTargetOrderId = "ORD-1042";
 const DefaultUnrelatedOrderId = "ORD-2048";
+const ScenarioIdentifierSchema = z.string().trim().min(1).max(128);
 
 export interface NaiveGapScenarioOptions {
   projectionName?: string;
@@ -32,11 +34,17 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 function resolveOptions(options: NaiveGapScenarioOptions): Required<NaiveGapScenarioOptions> {
-  return {
-    projectionName: options.projectionName ?? DefaultProjectionName,
-    targetOrderId: options.targetOrderId ?? DefaultTargetOrderId,
-    unrelatedOrderId: options.unrelatedOrderId ?? DefaultUnrelatedOrderId,
+  const resolved = {
+    projectionName: ScenarioIdentifierSchema.parse(options.projectionName ?? DefaultProjectionName),
+    targetOrderId: ScenarioIdentifierSchema.parse(options.targetOrderId ?? DefaultTargetOrderId),
+    unrelatedOrderId: ScenarioIdentifierSchema.parse(
+      options.unrelatedOrderId ?? DefaultUnrelatedOrderId,
+    ),
   };
+  if (resolved.targetOrderId === resolved.unrelatedOrderId) {
+    throw new Error("Target and unrelated order IDs must be different");
+  }
+  return resolved;
 }
 
 async function readCustomerOrder(pool: Pool, orderId: string): Promise<OrderProjection> {
