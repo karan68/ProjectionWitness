@@ -4,7 +4,7 @@ import {
   type OrderEventData,
 } from "@projection-witness/domain";
 import { randomUUID } from "node:crypto";
-import type { Pool, PoolClient } from "pg";
+import type { Pool, PoolClient, QueryResult, QueryResultRow } from "pg";
 import { z } from "zod";
 import { ExpectedVersionConflictError, InvalidOrderStreamError } from "./errors.js";
 
@@ -12,6 +12,7 @@ const ExpectedVersionSchema = z.number().int().nonnegative().safe();
 const JsonValueSchema = z.json();
 const MetadataSchema = z.record(z.string(), JsonValueSchema);
 const TimeoutSchema = z.number().int().positive().safe();
+const LoadLimitSchema = z.number().int().positive().safe();
 
 type JsonValue = z.infer<typeof JsonValueSchema>;
 
@@ -72,6 +73,40 @@ function storedEvent(row: EventRow): StoredOrderEvent {
     metadata: MetadataSchema.parse(row.metadata),
     recordedAt: row.recorded_at.toISOString(),
   };
+}
+
+interface EventQueryable {
+  query<Row extends QueryResultRow = QueryResultRow>(
+    text: string,
+    values?: readonly unknown[],
+  ): Promise<QueryResult<Row>>;
+}
+
+export async function loadOrderStream(
+  queryable: EventQueryable,
+  streamIdInput: string,
+  limitInput?: number,
+): Promise<readonly StoredOrderEvent[]> {
+  const streamId = OrderIdSchema.parse(streamIdInput);
+  const limit = limitInput === undefined ? null : LoadLimitSchema.parse(limitInput);
+  const result = await queryable.query<EventRow>(
+    `SELECT
+       event_id,
+       global_position::text,
+       stream_id,
+       stream_version,
+       event_type,
+       payload,
+       metadata,
+       recorded_at
+     FROM events
+     WHERE stream_id = $1
+     ORDER BY stream_version
+     LIMIT $2`,
+    [streamId, limit],
+  );
+
+  return result.rows.map(storedEvent);
 }
 
 async function rollback(client: PoolClient): Promise<void> {
@@ -203,23 +238,6 @@ export class OrderEventStore {
   }
 
   async loadStream(streamIdInput: string): Promise<readonly StoredOrderEvent[]> {
-    const streamId = OrderIdSchema.parse(streamIdInput);
-    const result = await this.pool.query<EventRow>(
-      `SELECT
-         event_id,
-         global_position::text,
-         stream_id,
-         stream_version,
-         event_type,
-         payload,
-         metadata,
-         recorded_at
-       FROM events
-       WHERE stream_id = $1
-       ORDER BY stream_version`,
-      [streamId],
-    );
-
-    return result.rows.map(storedEvent);
+    return loadOrderStream(this.pool, streamIdInput);
   }
 }

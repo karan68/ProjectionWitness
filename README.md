@@ -36,7 +36,7 @@ $env:DATABASE_URL_MIGRATOR = "postgresql://pw_migrator:<local-password>@127.0.0.
 ```
 
 The migration runner applies each file once, records its SHA-256 checksum, and refuses an applied
-filename whose contents have changed. The role bootstrap reads the four runtime URLs, validates
+filename whose contents have changed. The role bootstrap reads the five runtime URLs, validates
 their fixed usernames and database target, and provisions their passwords without committing
 secrets. See [docs/EVENT_STORE.md](docs/EVENT_STORE.md) for the implemented append and
 immutability contracts.
@@ -93,7 +93,18 @@ and approval fields are rechecked under a fixed lock order. Stale, expired, no-o
 injected audit-failure paths leave repair state unchanged.
 
 See [docs/TRANSACTIONAL_REPAIR.md](docs/TRANSACTIONAL_REPAIR.md) for the lock order, role boundary,
-stable outcomes, and PostgreSQL evidence. MCP tools and TrueForge approval wiring remain separate
+stable outcomes, and PostgreSQL evidence.
+
+## MCP connectors
+
+The loopback read connector exposes seven bounded investigation, staging, and verification tools.
+The separate write connector exposes only the destructive, idempotent
+`apply_projection_repair` tool so TrueForge can place native approval on that exact operation.
+The write-facing database credential can stage immutable plans but cannot mutate projections;
+apply runs through the internal executor identity.
+
+See [docs/MCP_CONNECTORS.md](docs/MCP_CONNECTORS.md) for the exact tool surfaces, database roles,
+limits, startup command, and official-client smoke test. Native TrueForge approval wiring remains
 follow-up work.
 
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
