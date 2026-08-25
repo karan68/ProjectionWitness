@@ -1,11 +1,13 @@
 import { buildOrderApi } from "@projection-witness/api";
+import { waitForCommitGate } from "@projection-witness/demo-driver";
 import { OrderEventStore, createDatabasePool, migrateDatabase } from "@projection-witness/database";
 import { versionOrderEvent, type OrderProjection } from "@projection-witness/domain";
 import { NaiveOrderProjector } from "@projection-witness/projector";
 import { reduceOrder } from "@projection-witness/reducer";
 import type { FastifyInstance } from "fastify";
+import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 function environmentVariable(name: string): string | undefined {
   return process.env[name];
@@ -30,6 +32,7 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
   let eventStore: OrderEventStore;
   let projector: NaiveOrderProjector;
   let api: FastifyInstance;
+  const projectionName = `orders-gap-test-${randomUUID()}`;
 
   beforeAll(async () => {
     pool = createDatabasePool({
@@ -38,17 +41,16 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
       maxConnections: 8,
     });
     await migrateDatabase(pool);
+    await pool.query(
+      `INSERT INTO projection_checkpoints (projection_name, last_global_position)
+       SELECT $1, COALESCE(max(global_position), 0)
+       FROM events`,
+      [projectionName],
+    );
     eventStore = new OrderEventStore(pool);
-    projector = new NaiveOrderProjector(pool);
+    projector = new NaiveOrderProjector(pool, { projectionName });
     api = buildOrderApi(pool);
     await api.ready();
-  });
-
-  beforeEach(async () => {
-    await pool.query(
-      "TRUNCATE projection_gaps, projection_checkpoints, order_view, events, event_streams CASCADE",
-    );
-    await pool.query("ALTER SEQUENCE event_global_position_seq RESTART WITH 1");
   });
 
   afterAll(async () => {
@@ -56,14 +58,17 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
     await pool.end();
   });
 
-  async function seedAndProjectOrders(): Promise<void> {
+  async function seedAndProjectOrders(
+    targetOrderId: string,
+    unrelatedOrderId: string,
+  ): Promise<void> {
     await eventStore.append({
-      streamId: "ORD-1042",
+      streamId: targetOrderId,
       expectedVersion: 0,
       event: { type: "OrderPlaced", totalCents: 12_900 },
     });
     await eventStore.append({
-      streamId: "ORD-2048",
+      streamId: unrelatedOrderId,
       expectedVersion: 0,
       event: { type: "OrderPlaced", totalCents: 5_000 },
     });
@@ -72,7 +77,10 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
   }
 
   it("leaves a committed payment permanently behind the advanced checkpoint", async () => {
-    await seedAndProjectOrders();
+    const suffix = randomUUID();
+    const targetOrderId = `ORD-GAP-A-${suffix}`;
+    const unrelatedOrderId = `ORD-GAP-B-${suffix}`;
+    await seedAndProjectOrders(targetOrderId, unrelatedOrderId);
     const gateReached = deferred();
     const releaseCommit = deferred();
     let pendingPosition: string | undefined;
@@ -84,7 +92,7 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
       },
     });
     const pendingPayment = gatedStore.append({
-      streamId: "ORD-1042",
+      streamId: targetOrderId,
       expectedVersion: 1,
       event: {
         type: "PaymentCaptured",
@@ -94,9 +102,9 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
     });
 
     try {
-      await gateReached.promise;
+      await waitForCommitGate(gateReached.promise, pendingPayment);
       const unrelatedShipment = await eventStore.append({
-        streamId: "ORD-2048",
+        streamId: unrelatedOrderId,
         expectedVersion: 1,
         event: { type: "OrderShipped", shipmentId: "SHIP-2048" },
       });
@@ -110,7 +118,10 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
       const payment = await pendingPayment;
       expect(payment.globalPosition).toBe(pendingPosition);
 
-      const customerResponse = await api.inject({ method: "GET", url: "/orders/ORD-1042" });
+      const customerResponse = await api.inject({
+        method: "GET",
+        url: `/orders/${targetOrderId}`,
+      });
       expect(customerResponse.statusCode).toBe(200);
       expect(customerResponse.json()).toMatchObject({
         paidCents: 0,
@@ -118,7 +129,7 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
         lastStreamVersion: 1,
       });
 
-      const stream = await eventStore.loadStream("ORD-1042");
+      const stream = await eventStore.loadStream(targetOrderId);
       const replayed = stream.reduce<OrderProjection | null>(
         (state, stored) =>
           reduceOrder(
@@ -143,9 +154,12 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
   });
 
   it("ablation: projects the payment when both positions are visible before polling", async () => {
-    await seedAndProjectOrders();
+    const suffix = randomUUID();
+    const targetOrderId = `ORD-ABLATION-A-${suffix}`;
+    const unrelatedOrderId = `ORD-ABLATION-B-${suffix}`;
+    await seedAndProjectOrders(targetOrderId, unrelatedOrderId);
     await eventStore.append({
-      streamId: "ORD-1042",
+      streamId: targetOrderId,
       expectedVersion: 1,
       event: {
         type: "PaymentCaptured",
@@ -154,7 +168,7 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
       },
     });
     await eventStore.append({
-      streamId: "ORD-2048",
+      streamId: unrelatedOrderId,
       expectedVersion: 1,
       event: { type: "OrderShipped", shipmentId: "SHIP-VISIBLE" },
     });
@@ -162,7 +176,10 @@ describeWithDatabase("naive projector out-of-order commit gap", () => {
     const poll = await projector.poll();
     expect(poll.processedCount).toBe(2);
 
-    const customerResponse = await api.inject({ method: "GET", url: "/orders/ORD-1042" });
+    const customerResponse = await api.inject({
+      method: "GET",
+      url: `/orders/${targetOrderId}`,
+    });
     expect(customerResponse.json()).toMatchObject({
       paidCents: 12_900,
       paymentStatus: "PAID",

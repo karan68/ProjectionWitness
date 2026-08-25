@@ -49,13 +49,17 @@ demo database:
 ```powershell
 $env:DEMO_MODE = "true"
 $env:DATABASE_URL_MIGRATOR = "postgresql://pw_migrator:<local-password>@127.0.0.1:55432/projection_witness"
+$env:CONFIRM_DATABASE_RESET = "projection-witness-local"
+$env:POSTGRES_PORT = "55432"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run demo:reset
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run demo:reproduce-gap
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run demo:verify
 ```
 
-The reproducer resets the whole local demo data set, allocates the payment at global position 3,
-commits an unrelated event at position 4 first, and advances naive projector v1 to checkpoint 4.
-The API remains `AWAITING_PAYMENT` while immutable stream replay returns `PAID`.
+The reset command recreates the disposable Docker database volume. The reproducer refuses a
+non-empty database, then allocates the payment at global position 3, commits an unrelated event at
+position 4 first, and advances naive projector v1 to checkpoint 4. The API remains
+`AWAITING_PAYMENT` while immutable stream replay returns `PAID`.
 
 See [docs/GAP_REPRODUCTION.md](docs/GAP_REPRODUCTION.md) for the mechanism, ablation, safety
 guard, and exact expected evidence.

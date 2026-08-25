@@ -7,11 +7,18 @@ import {
 } from "@projection-witness/domain";
 import { NaiveOrderProjector } from "@projection-witness/projector";
 import { reduceOrder } from "@projection-witness/reducer";
+import { setTimeout as delay } from "node:timers/promises";
 import type { Pool } from "pg";
 
-const ProjectionName = "orders";
-const TargetOrderId = "ORD-1042";
-const UnrelatedOrderId = "ORD-2048";
+const DefaultProjectionName = "orders";
+const DefaultTargetOrderId = "ORD-1042";
+const DefaultUnrelatedOrderId = "ORD-2048";
+
+export interface NaiveGapScenarioOptions {
+  projectionName?: string;
+  targetOrderId?: string;
+  unrelatedOrderId?: string;
+}
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
   let resolvePromise: (() => void) | undefined;
@@ -24,10 +31,18 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve: resolvePromise };
 }
 
-async function readCustomerOrder(pool: Pool): Promise<OrderProjection> {
+function resolveOptions(options: NaiveGapScenarioOptions): Required<NaiveGapScenarioOptions> {
+  return {
+    projectionName: options.projectionName ?? DefaultProjectionName,
+    targetOrderId: options.targetOrderId ?? DefaultTargetOrderId,
+    unrelatedOrderId: options.unrelatedOrderId ?? DefaultUnrelatedOrderId,
+  };
+}
+
+async function readCustomerOrder(pool: Pool, orderId: string): Promise<OrderProjection> {
   const api = buildOrderApi(pool);
   try {
-    const response = await api.inject({ method: "GET", url: `/orders/${TargetOrderId}` });
+    const response = await api.inject({ method: "GET", url: `/orders/${orderId}` });
     if (response.statusCode !== 200) {
       throw new Error(`Order API returned HTTP ${String(response.statusCode)}`);
     }
@@ -37,8 +52,11 @@ async function readCustomerOrder(pool: Pool): Promise<OrderProjection> {
   }
 }
 
-async function replayTargetOrder(eventStore: OrderEventStore): Promise<OrderProjection> {
-  const stream = await eventStore.loadStream(TargetOrderId);
+async function replayTargetOrder(
+  eventStore: OrderEventStore,
+  targetOrderId: string,
+): Promise<OrderProjection> {
+  const stream = await eventStore.loadStream(targetOrderId);
   const replayed = stream.reduce<OrderProjection | null>(
     (state, stored) =>
       reduceOrder(state, versionOrderEvent(stored.streamId, stored.streamVersion, stored.payload)),
@@ -60,33 +78,106 @@ export interface NaiveGapEvidence {
   laterPollProcessedCount: number;
 }
 
-export async function resetNaiveGapFixture(pool: Pool): Promise<void> {
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(
-      "TRUNCATE projection_gaps, projection_checkpoints, order_view, events, event_streams CASCADE",
-    );
-    await client.query("ALTER SEQUENCE event_global_position_seq RESTART WITH 1");
-    await client.query("COMMIT");
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
-  } finally {
-    client.release();
+export interface NaiveGapProof {
+  customerState: OrderProjection;
+  replayedState: OrderProjection;
+  paymentPosition: string;
+  checkpointPosition: string;
+  checkpointStreamId: string;
+  laterPollProcessedCount: number;
+}
+
+interface FreshDatabaseRow {
+  event_count: string;
+  stream_count: string;
+  view_count: string;
+  checkpoint_count: string;
+  sequence_value: string;
+  sequence_called: boolean;
+}
+
+export async function assertFreshNaiveGapDatabase(pool: Pool): Promise<void> {
+  const result = await pool.query<FreshDatabaseRow>(
+    `SELECT
+       (SELECT count(*)::text FROM events) AS event_count,
+       (SELECT count(*)::text FROM event_streams) AS stream_count,
+       (SELECT count(*)::text FROM order_view) AS view_count,
+       (SELECT count(*)::text FROM projection_checkpoints) AS checkpoint_count,
+       last_value::text AS sequence_value,
+       is_called AS sequence_called
+     FROM event_global_position_seq`,
+  );
+  const state = result.rows[0];
+  if (
+    state === undefined ||
+    state.event_count !== "0" ||
+    state.stream_count !== "0" ||
+    state.view_count !== "0" ||
+    state.checkpoint_count !== "0" ||
+    state.sequence_value !== "1" ||
+    state.sequence_called
+  ) {
+    throw new Error("Gap reproduction requires a fresh disposable database; run demo:reset first");
   }
 }
 
-export async function reproduceNaiveGap(pool: Pool): Promise<NaiveGapEvidence> {
+export async function waitForCommitGate(
+  gateReached: Promise<void>,
+  pendingAppend: Promise<unknown>,
+  timeoutMs = 2_000,
+): Promise<void> {
+  await Promise.race([
+    gateReached,
+    pendingAppend.then(
+      () => Promise.reject(new Error("Gated append completed before reaching its commit gate")),
+      (error: unknown) => Promise.reject(error),
+    ),
+    delay(timeoutMs).then(() =>
+      Promise.reject(new Error(`Commit gate was not reached within ${String(timeoutMs)}ms`)),
+    ),
+  ]);
+}
+
+export function assertNaiveGapProof(
+  proof: NaiveGapProof,
+  options: NaiveGapScenarioOptions = {},
+): void {
+  const resolved = resolveOptions(options);
+  const valid =
+    proof.customerState.orderId === resolved.targetOrderId &&
+    proof.customerState.totalCents === 12_900 &&
+    proof.customerState.paidCents === 0 &&
+    proof.customerState.paymentStatus === "AWAITING_PAYMENT" &&
+    proof.customerState.fulfillmentStatus === "NOT_SHIPPED" &&
+    proof.customerState.lastStreamVersion === 1 &&
+    proof.replayedState.orderId === resolved.targetOrderId &&
+    proof.replayedState.totalCents === 12_900 &&
+    proof.replayedState.paidCents === 12_900 &&
+    proof.replayedState.paymentStatus === "PAID" &&
+    proof.replayedState.fulfillmentStatus === "NOT_SHIPPED" &&
+    proof.replayedState.lastStreamVersion === 2 &&
+    BigInt(proof.paymentPosition) < BigInt(proof.checkpointPosition) &&
+    proof.checkpointStreamId === resolved.unrelatedOrderId &&
+    proof.laterPollProcessedCount === 0;
+  if (!valid) {
+    throw new Error("Expected deterministic naive-projector gap proof is not present");
+  }
+}
+
+export async function reproduceNaiveGap(
+  pool: Pool,
+  options: NaiveGapScenarioOptions = {},
+): Promise<NaiveGapEvidence> {
+  const resolved = resolveOptions(options);
   const eventStore = new OrderEventStore(pool);
-  const projector = new NaiveOrderProjector(pool, { projectionName: ProjectionName });
+  const projector = new NaiveOrderProjector(pool, { projectionName: resolved.projectionName });
   await eventStore.append({
-    streamId: TargetOrderId,
+    streamId: resolved.targetOrderId,
     expectedVersion: 0,
     event: { type: "OrderPlaced", totalCents: 12_900 },
   });
   await eventStore.append({
-    streamId: UnrelatedOrderId,
+    streamId: resolved.unrelatedOrderId,
     expectedVersion: 0,
     event: { type: "OrderPlaced", totalCents: 5_000 },
   });
@@ -104,7 +195,7 @@ export async function reproduceNaiveGap(pool: Pool): Promise<NaiveGapEvidence> {
     },
   });
   const pendingPayment = gatedStore.append({
-    streamId: TargetOrderId,
+    streamId: resolved.targetOrderId,
     expectedVersion: 1,
     event: {
       type: "PaymentCaptured",
@@ -114,9 +205,9 @@ export async function reproduceNaiveGap(pool: Pool): Promise<NaiveGapEvidence> {
   });
 
   try {
-    await gateReached.promise;
+    await waitForCommitGate(gateReached.promise, pendingPayment);
     const unrelatedEvent = await eventStore.append({
-      streamId: UnrelatedOrderId,
+      streamId: resolved.unrelatedOrderId,
       expectedVersion: 1,
       event: { type: "OrderShipped", shipmentId: "SHIP-2048" },
     });
@@ -127,12 +218,12 @@ export async function reproduceNaiveGap(pool: Pool): Promise<NaiveGapEvidence> {
 
     releaseCommit.resolve();
     const payment = await pendingPayment;
-    const customerState = await readCustomerOrder(pool);
-    const replayedState = await replayTargetOrder(eventStore);
+    const customerState = await readCustomerOrder(pool, resolved.targetOrderId);
+    const replayedState = await replayTargetOrder(eventStore, resolved.targetOrderId);
     const laterPoll = await projector.poll();
 
-    return {
-      targetOrderId: TargetOrderId,
+    const evidence: NaiveGapEvidence = {
+      targetOrderId: resolved.targetOrderId,
       pendingPaymentPosition: payment.globalPosition,
       unrelatedCommittedPosition: unrelatedEvent.globalPosition,
       checkpointPosition: gapPoll.checkpointAfter,
@@ -140,40 +231,81 @@ export async function reproduceNaiveGap(pool: Pool): Promise<NaiveGapEvidence> {
       replayedState,
       laterPollProcessedCount: laterPoll.processedCount,
     };
+    assertNaiveGapProof(
+      {
+        customerState,
+        replayedState,
+        paymentPosition: payment.globalPosition,
+        checkpointPosition: gapPoll.checkpointAfter,
+        checkpointStreamId: unrelatedEvent.streamId,
+        laterPollProcessedCount: laterPoll.processedCount,
+      },
+      resolved,
+    );
+    return evidence;
   } finally {
     releaseCommit.resolve();
     await pendingPayment.catch(() => undefined);
   }
 }
 
-export async function verifyNaiveGap(pool: Pool): Promise<{
+export async function verifyNaiveGap(
+  pool: Pool,
+  options: NaiveGapScenarioOptions = {},
+): Promise<{
   customerState: OrderProjection;
   replayedState: OrderProjection;
+  paymentPosition: string;
   checkpointPosition: string;
+  checkpointStreamId: string;
+  laterPollProcessedCount: number;
 }> {
+  const resolved = resolveOptions(options);
   const eventStore = new OrderEventStore(pool);
-  const customerState = await readCustomerOrder(pool);
-  const replayedState = await replayTargetOrder(eventStore);
+  const customerState = await readCustomerOrder(pool, resolved.targetOrderId);
+  const replayedState = await replayTargetOrder(eventStore, resolved.targetOrderId);
+  const stream = await eventStore.loadStream(resolved.targetOrderId);
+  const payment = stream.find((event) => event.eventType === "PaymentCaptured");
+  if (payment === undefined) {
+    throw new Error("Target payment event is missing");
+  }
   const checkpointResult = await pool.query<{ last_global_position: string }>(
     `SELECT last_global_position::text
      FROM projection_checkpoints
      WHERE projection_name = $1`,
-    [ProjectionName],
+    [resolved.projectionName],
   );
   const checkpoint = checkpointResult.rows[0];
   if (checkpoint === undefined) {
     throw new Error("Orders checkpoint is missing");
   }
-  if (
-    customerState.paymentStatus !== "AWAITING_PAYMENT" ||
-    replayedState.paymentStatus !== "PAID"
-  ) {
-    throw new Error("Expected API/stream payment mismatch is not present");
+  const checkpointEventResult = await pool.query<{ stream_id: string }>(
+    "SELECT stream_id FROM events WHERE global_position = $1::bigint",
+    [checkpoint.last_global_position],
+  );
+  const checkpointEvent = checkpointEventResult.rows[0];
+  if (checkpointEvent === undefined) {
+    throw new Error("Checkpoint event is missing");
   }
+  const laterPoll = await new NaiveOrderProjector(pool, {
+    projectionName: resolved.projectionName,
+  }).poll();
+  const proof: NaiveGapProof = {
+    customerState,
+    replayedState,
+    paymentPosition: payment.globalPosition,
+    checkpointPosition: checkpoint.last_global_position,
+    checkpointStreamId: checkpointEvent.stream_id,
+    laterPollProcessedCount: laterPoll.processedCount,
+  };
+  assertNaiveGapProof(proof, resolved);
 
   return {
     customerState,
     replayedState,
+    paymentPosition: payment.globalPosition,
     checkpointPosition: checkpoint.last_global_position,
+    checkpointStreamId: checkpointEvent.stream_id,
+    laterPollProcessedCount: laterPoll.processedCount,
   };
 }

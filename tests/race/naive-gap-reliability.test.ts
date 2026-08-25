@@ -1,5 +1,6 @@
-import { reproduceNaiveGap, resetNaiveGapFixture } from "@projection-witness/demo-driver";
+import { reproduceNaiveGap } from "@projection-witness/demo-driver";
 import { createDatabasePool, migrateDatabase } from "@projection-witness/database";
+import { randomUUID } from "node:crypto";
 import type { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -27,14 +28,27 @@ describeWithDatabase("naive gap reliability", () => {
   });
 
   it("reproduces the genuine gap ten consecutive times", async () => {
+    const runId = randomUUID();
+    const projectionName = `orders-reliability-${runId}`;
+    await pool.query(
+      `INSERT INTO projection_checkpoints (projection_name, last_global_position)
+       SELECT $1, COALESCE(max(global_position), 0)
+       FROM events`,
+      [projectionName],
+    );
     for (let repetition = 1; repetition <= 10; repetition += 1) {
-      await resetNaiveGapFixture(pool);
-      const evidence = await reproduceNaiveGap(pool);
+      const evidence = await reproduceNaiveGap(pool, {
+        projectionName,
+        targetOrderId: `ORD-RELIABILITY-A-${runId}-${String(repetition)}`,
+        unrelatedOrderId: `ORD-RELIABILITY-B-${runId}-${String(repetition)}`,
+      });
 
+      expect(
+        BigInt(evidence.pendingPaymentPosition),
+        `repetition ${String(repetition)}`,
+      ).toBeLessThan(BigInt(evidence.unrelatedCommittedPosition));
+      expect(evidence.checkpointPosition).toBe(evidence.unrelatedCommittedPosition);
       expect(evidence, `repetition ${String(repetition)}`).toMatchObject({
-        pendingPaymentPosition: "3",
-        unrelatedCommittedPosition: "4",
-        checkpointPosition: "4",
         customerState: {
           paidCents: 0,
           paymentStatus: "AWAITING_PAYMENT",

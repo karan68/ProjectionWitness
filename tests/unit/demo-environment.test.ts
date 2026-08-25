@@ -43,6 +43,17 @@ describe("requireDemoDatabaseUrl", () => {
     expect(() => requireDemoDatabaseUrl()).toThrow(/loopback database host/);
   });
 
+  it("refuses node-postgres query-parameter host overrides", () => {
+    vi.stubEnv("NODE_ENV", "test");
+    vi.stubEnv("DEMO_MODE", "true");
+    vi.stubEnv(
+      "DATABASE_URL_MIGRATOR",
+      `${LoopbackDatabaseUrl}?host=database.example.com&port=5432`,
+    );
+
+    expect(() => requireDemoDatabaseUrl()).toThrow(/must not contain query parameters/);
+  });
+
   it("returns a loopback URL unchanged", () => {
     vi.stubEnv("NODE_ENV", "test");
     vi.stubEnv("DEMO_MODE", "true");

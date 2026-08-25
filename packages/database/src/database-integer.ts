@@ -1,7 +1,7 @@
-const DecimalIntegerPattern = /^-?(?:0|[1-9]\d*)$/;
+const DecimalIntegerPattern = /^(?:0|[1-9]\d*)$/;
 
 export function parseSafeDatabaseInteger(value: unknown, fieldName: string): number {
-  if (typeof value === "number" && Number.isSafeInteger(value)) {
+  if (typeof value === "number" && Number.isSafeInteger(value) && value >= 0) {
     return value;
   }
   if (typeof value !== "string" || !DecimalIntegerPattern.test(value)) {

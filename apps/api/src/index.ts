@@ -1,1 +1,1 @@
-export { buildOrderApi } from "./order-api.js";
+export { buildOrderApi, type OrderApiOptions } from "./order-api.js";

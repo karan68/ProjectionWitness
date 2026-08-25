@@ -39,12 +39,15 @@ reducer logic, and direct row mutation are not the cause.
 
 ## Commands
 
-The reset/reproduction commands refuse `NODE_ENV=production`, require `DEMO_MODE=true`, and accept
-only a loopback `DATABASE_URL_MIGRATOR` host.
+The database reset refuses `NODE_ENV=production` and requires the exact confirmation token. The
+reproducer requires `DEMO_MODE=true`, rejects URL query/fragment overrides, accepts only a
+loopback PostgreSQL authority, and refuses any database that is not freshly initialized.
 
 ```powershell
 $env:DEMO_MODE = "true"
 $env:DATABASE_URL_MIGRATOR = "postgresql://pw_migrator:<local-password>@127.0.0.1:55432/projection_witness"
+$env:CONFIRM_DATABASE_RESET = "projection-witness-local"
+$env:POSTGRES_PORT = "55432"
 
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run demo:reset
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run demo:reproduce-gap
@@ -74,10 +77,11 @@ Expected evidence fields after reproduction:
 
 ## Reset Boundary
 
-Events reject row-level `UPDATE` and `DELETE`. The guarded local reset therefore truncates the
-entire demo data set and restarts the global-position sequence instead of pretending immutable
-events can be selectively removed. This operation is for the disposable loopback demo database
-only; it is not exposed by the production API.
+Events reject row-level `UPDATE` and `DELETE`, and PR 3 contains no event-table `TRUNCATE` path.
+The guarded local reset destroys and recreates the entire Docker Compose volume, then migrations
+initialize a new event store and sequence. This operation is for the disposable loopback demo
+database only; it is not exposed by the production API. Reproduction refuses to run unless every
+event/projection table is empty and the sequence has never been called.
 
 ## Current Limits
 

@@ -1,6 +1,10 @@
 export {
+  assertFreshNaiveGapDatabase,
+  assertNaiveGapProof,
   reproduceNaiveGap,
-  resetNaiveGapFixture,
   verifyNaiveGap,
+  waitForCommitGate,
   type NaiveGapEvidence,
+  type NaiveGapProof,
+  type NaiveGapScenarioOptions,
 } from "./naive-gap-scenario.js";

@@ -17,6 +17,12 @@ export function requireDemoDatabaseUrl(): string {
     throw new Error("DATABASE_URL_MIGRATOR is required");
   }
   const parsed = new URL(databaseUrl);
+  if (parsed.protocol !== "postgresql:" && parsed.protocol !== "postgres:") {
+    throw new Error("Demo database operations require a PostgreSQL URL");
+  }
+  if (parsed.search !== "" || parsed.hash !== "") {
+    throw new Error("Demo database URL must not contain query parameters or a fragment");
+  }
   if (!LoopbackHosts.has(parsed.hostname)) {
     throw new Error("Demo database operations require a loopback database host");
   }

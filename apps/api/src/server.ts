@@ -20,7 +20,7 @@ const pool = createDatabasePool({
   databaseUrl,
   applicationName: "projection-witness-api",
 });
-const app = buildOrderApi(pool);
+const app = buildOrderApi(pool, { logger: true });
 
 const close = async (): Promise<void> => {
   await app.close();

@@ -121,7 +121,7 @@ export class NaiveOrderProjector {
            payload
          FROM events
          WHERE global_position > $1::bigint
-         ORDER BY global_position
+         ORDER BY events.global_position
          LIMIT $2`,
         [checkpoint.last_global_position, this.batchSize],
       );
