@@ -23,6 +23,19 @@ import { RepairError } from "./errors.js";
 
 const PositiveIntegerSchema = z.number().int().positive().safe();
 const OptionalCorrelationSchema = z.string().trim().min(1).max(256).optional();
+const MaximumSafeCents = BigInt(Number.MAX_SAFE_INTEGER);
+const SafeCentsStringSchema = z
+  .string()
+  .regex(/^(0|[1-9][0-9]*)$/)
+  .max(16)
+  .refine((value) => BigInt(value) <= MaximumSafeCents, {
+    message: "Cents must fit the JavaScript safe integer range",
+  });
+const CanonicalTimestampSchema = z.iso
+  .datetime({ offset: true })
+  .refine((value) => new Date(value).toISOString() === value, {
+    message: "Timestamp must use canonical millisecond UTC form",
+  });
 
 export const ApplyProjectionRepairInputSchema = z
   .object({
@@ -41,7 +54,7 @@ export const ApplyProjectionRepairInputSchema = z
       .regex(/^[1-9][0-9]*$/)
       .max(19),
     evidenceSha256: z.string().regex(/^[0-9a-f]{64}$/),
-    expiresAt: z.iso.datetime({ offset: true }),
+    expiresAt: CanonicalTimestampSchema,
     trueforgeSessionId: OptionalCorrelationSchema,
     trueforgeTurnId: OptionalCorrelationSchema,
     trueforgeToolCallId: OptionalCorrelationSchema,
@@ -139,6 +152,11 @@ interface AuditRow {
   receipt_sha256: string;
 }
 
+interface BoundedStreamMetricsRow {
+  event_count: string;
+  raw_bytes: string;
+}
+
 interface ResolvedProjectionRepairOptions {
   reducerArtifactPath: string;
   lockTimeoutMs: number;
@@ -234,6 +252,86 @@ function envelopeFromPlan(plan: PlanRow): RepairEnvelope {
   });
 }
 
+function assertSafeEnvelopeValues(envelope: RepairEnvelope): void {
+  CanonicalTimestampSchema.parse(envelope.createdAt);
+  CanonicalTimestampSchema.parse(envelope.expiresAt);
+  for (const value of [
+    envelope.currentRow.value.totalCents,
+    envelope.currentRow.value.paidCents,
+    envelope.candidateRow.value.totalCents,
+    envelope.candidateRow.value.paidCents,
+  ]) {
+    SafeCentsStringSchema.parse(value);
+  }
+}
+
+async function loadBoundedStream(
+  client: PoolClient,
+  streamId: string,
+  headVersion: number,
+  maxEvents: number,
+  maxCanonicalBytes: number,
+) {
+  if (headVersion > maxEvents) {
+    throw new RepairError("PLAN_INVALID", "Event stream exceeds the configured count limit");
+  }
+  const boundedLimit = maxEvents + 1;
+  const metricsResult = await client.query<BoundedStreamMetricsRow>(
+    `WITH bounded AS (
+       SELECT
+         event_id, global_position, stream_id, stream_version,
+         event_type, payload, metadata, recorded_at
+       FROM events
+       WHERE stream_id = $1
+       ORDER BY stream_version
+       LIMIT $2
+     )
+     SELECT
+       count(*)::text AS event_count,
+       COALESCE(sum(
+         octet_length(event_id::text)
+         + octet_length(global_position::text)
+         + octet_length(stream_id)
+         + octet_length(stream_version::text)
+         + octet_length(event_type)
+         + octet_length(payload::text)
+         + octet_length(metadata::text)
+         + octet_length(recorded_at::text)
+       ), 0)::text AS raw_bytes
+     FROM bounded`,
+    [streamId, boundedLimit],
+  );
+  const metrics = metricsResult.rows[0];
+  if (metrics === undefined) {
+    throw new RepairError("APPLY_FAILED", "Bounded stream metrics returned no row");
+  }
+  const eventCount = Number(metrics.event_count);
+  if (!Number.isSafeInteger(eventCount) || eventCount > maxEvents) {
+    throw new RepairError("PLAN_INVALID", "Event stream exceeds the configured count limit");
+  }
+  if (BigInt(metrics.raw_bytes) > BigInt(maxCanonicalBytes)) {
+    throw new RepairError("PLAN_INVALID", "Event stream exceeds the configured byte limit");
+  }
+
+  const eventsResult = await client.query<EventRow>(
+    `SELECT
+       event_id, global_position::text, stream_id, stream_version,
+       event_type, payload, metadata, recorded_at
+     FROM events
+     WHERE stream_id = $1
+     ORDER BY stream_version
+     LIMIT $2`,
+    [streamId, boundedLimit],
+  );
+  return snapshotEventStream({
+    streamId,
+    headVersion,
+    events: eventsResult.rows.map(storedEvent),
+    maxEvents,
+    maxCanonicalBytes,
+  });
+}
+
 async function rollback(client: PoolClient): Promise<void> {
   try {
     await client.query("ROLLBACK");
@@ -272,72 +370,174 @@ export class ProjectionRepairService {
     let envelope: RepairEnvelope;
     try {
       envelope = verifyRepairEnvelope(input);
+      assertSafeEnvelopeValues(envelope);
     } catch {
       throw new RepairError("PLAN_INVALID", "Repair envelope is invalid");
     }
-    const result = await this.pool.query<{ plan_id: string; status: "PREPARED" | "APPLIED" }>(
-      `INSERT INTO projection_repair_plans (
-         plan_id, schema_version, projection_name, stream_id, stream_head_version,
-         event_count, stream_sha256, runtime_generation, reducer_sha256,
-         source_commit_sha, current_row_version, current_row_sha256, current_row,
-         candidate_row_sha256, candidate_row, evidence_sha256, status, created_at, expires_at
-       )
-       VALUES (
-         $1, $2, $3, $4, $5, $6, $7, $8::bigint, $9, $10, $11::bigint, $12,
-         $13::jsonb, $14, $15::jsonb, $16, 'PREPARED', $17::timestamptz, $18::timestamptz
-       )
-       ON CONFLICT (evidence_sha256) DO NOTHING
-       RETURNING plan_id, status`,
-      [
-        envelope.planId,
-        envelope.schemaVersion,
-        envelope.projectionName,
-        envelope.stream.streamId,
-        envelope.stream.headVersion,
-        envelope.stream.eventCount,
-        envelope.stream.sha256,
-        envelope.runtime.generation,
-        envelope.runtime.reducerSha256,
-        envelope.runtime.sourceCommitSha,
-        envelope.currentRow.rowVersion,
-        envelope.currentRow.sha256,
-        JSON.stringify(envelope.currentRow.value),
-        envelope.candidateRow.sha256,
-        JSON.stringify(envelope.candidateRow.value),
-        envelope.evidenceSha256,
-        envelope.createdAt,
-        envelope.expiresAt,
-      ],
-    );
-    const inserted = result.rows[0];
-    if (inserted !== undefined) {
-      return {
-        planId: inserted.plan_id,
-        evidenceSha256: envelope.evidenceSha256,
-        status: inserted.status,
-        created: true,
-      };
-    }
+    const client = await this.pool.connect();
+    try {
+      await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ");
+      await client.query("SELECT set_config('statement_timeout', $1, true)", [
+        `${String(this.options.statementTimeoutMs)}ms`,
+      ]);
 
-    const existing = await this.pool.query<{
-      plan_id: string;
-      status: "PREPARED" | "APPLIED";
-    }>(
-      `SELECT plan_id, status
-       FROM projection_repair_plans
-       WHERE evidence_sha256 = $1`,
-      [envelope.evidenceSha256],
-    );
-    const row = existing.rows[0];
-    if (row === undefined || row.plan_id !== envelope.planId) {
-      throw new RepairError("PLAN_INVALID", "Idempotent plan lookup did not match the envelope");
+      const runtimeResult = await client.query<RuntimeRow>(
+        `SELECT generation::text, reducer_sha256, source_commit_sha, algorithm_version, gap_strategy
+         FROM projection_runtime
+         WHERE projection_name = $1`,
+        [envelope.projectionName],
+      );
+      const runtime = runtimeResult.rows[0];
+      if (runtime === undefined) {
+        throw new RepairError("RUNTIME_UNATTESTED", "Projection runtime is not registered");
+      }
+      try {
+        assertRepairSafeProjectionRuntime(runtimeForSafety(envelope.projectionName, runtime));
+      } catch (error) {
+        if (error instanceof ProjectionRuntimeSafetyError) {
+          throw new RepairError(error.code, error.message);
+        }
+        throw error;
+      }
+      const liveRuntime = runtimeEvidence(envelope.projectionName, runtime);
+      if (
+        liveRuntime.generation !== envelope.runtime.generation ||
+        liveRuntime.reducerSha256 !== envelope.runtime.reducerSha256 ||
+        liveRuntime.sourceCommitSha !== envelope.runtime.sourceCommitSha ||
+        liveRuntime.algorithmVersion !== envelope.runtime.algorithmVersion ||
+        liveRuntime.gapStrategy !== envelope.runtime.gapStrategy
+      ) {
+        throw new RepairError("PLAN_INVALID", "Runtime evidence does not match live state");
+      }
+
+      const headResult = await client.query<StreamHeadRow>(
+        "SELECT version FROM event_streams WHERE stream_id = $1",
+        [envelope.stream.streamId],
+      );
+      const streamHead = headResult.rows[0];
+      if (streamHead === undefined) {
+        throw new RepairError("PLAN_INVALID", "Event stream was not found");
+      }
+      const rowResult = await client.query<OrderViewRow>(
+        `SELECT
+           order_id, total_cents::text, paid_cents::text, payment_status,
+           fulfillment_status, last_stream_version, row_version::text
+         FROM order_view
+         WHERE order_id = $1`,
+        [envelope.stream.streamId],
+      );
+      const currentRow = rowResult.rows[0];
+      if (currentRow === undefined) {
+        throw new RepairError("PLAN_INVALID", "Projection row was not found");
+      }
+      const stream = await loadBoundedStream(
+        client,
+        envelope.stream.streamId,
+        streamHead.version,
+        this.options.maxEvents,
+        this.options.maxCanonicalBytes,
+      );
+      const currentFingerprint = fingerprintCurrentProjectionRow(canonicalCurrentRow(currentRow));
+      const reducerEvidence = await runReducerArtifactEvidence(
+        this.options.reducerArtifactPath,
+        {
+          schemaVersion: 1,
+          expectedReducerSha256: runtime.reducer_sha256,
+          streamId: envelope.stream.streamId,
+          headVersion: streamHead.version,
+          events: stream.events,
+        },
+        {
+          maxEvents: this.options.maxEvents,
+          maxCanonicalBytes: this.options.maxCanonicalBytes,
+          maxExecutionMs: this.options.maxReducerExecutionMs,
+        },
+      );
+      const candidateFingerprint = fingerprintCandidateProjection(reducerEvidence.candidate.value);
+      if (
+        envelope.stream.headVersion !== streamHead.version ||
+        envelope.stream.eventCount !== stream.evidence.eventCount ||
+        envelope.stream.sha256 !== stream.evidence.sha256 ||
+        envelope.currentRow.sha256 !== currentFingerprint.sha256 ||
+        envelope.candidateRow.sha256 !== candidateFingerprint.sha256
+      ) {
+        throw new RepairError("PLAN_INVALID", "Envelope evidence does not match live state");
+      }
+
+      const result = await client.query<{ plan_id: string; status: "PREPARED" | "APPLIED" }>(
+        `INSERT INTO projection_repair_plans (
+           plan_id, schema_version, projection_name, stream_id, stream_head_version,
+           event_count, stream_sha256, runtime_generation, reducer_sha256,
+           source_commit_sha, current_row_version, current_row_sha256, current_row,
+           candidate_row_sha256, candidate_row, evidence_sha256, status, created_at, expires_at
+         )
+         VALUES (
+           $1, $2, $3, $4, $5, $6, $7, $8::bigint, $9, $10, $11::bigint, $12,
+           $13::jsonb, $14, $15::jsonb, $16, 'PREPARED', $17::timestamptz, $18::timestamptz
+         )
+         ON CONFLICT (evidence_sha256) DO NOTHING
+         RETURNING plan_id, status`,
+        [
+          envelope.planId,
+          envelope.schemaVersion,
+          envelope.projectionName,
+          envelope.stream.streamId,
+          envelope.stream.headVersion,
+          envelope.stream.eventCount,
+          envelope.stream.sha256,
+          envelope.runtime.generation,
+          envelope.runtime.reducerSha256,
+          envelope.runtime.sourceCommitSha,
+          envelope.currentRow.rowVersion,
+          envelope.currentRow.sha256,
+          JSON.stringify(envelope.currentRow.value),
+          envelope.candidateRow.sha256,
+          JSON.stringify(envelope.candidateRow.value),
+          envelope.evidenceSha256,
+          envelope.createdAt,
+          envelope.expiresAt,
+        ],
+      );
+      const inserted = result.rows[0];
+      if (inserted !== undefined) {
+        await client.query("COMMIT");
+        return {
+          planId: inserted.plan_id,
+          evidenceSha256: envelope.evidenceSha256,
+          status: inserted.status,
+          created: true,
+        };
+      }
+
+      const existing = await client.query<{
+        plan_id: string;
+        status: "PREPARED" | "APPLIED";
+      }>(
+        `SELECT plan_id, status
+         FROM projection_repair_plans
+         WHERE evidence_sha256 = $1`,
+        [envelope.evidenceSha256],
+      );
+      const row = existing.rows[0];
+      if (row === undefined || row.plan_id !== envelope.planId) {
+        throw new RepairError("PLAN_INVALID", "Idempotent plan lookup did not match the envelope");
+      }
+      await client.query("COMMIT");
+      return {
+        planId: row.plan_id,
+        evidenceSha256: envelope.evidenceSha256,
+        status: row.status,
+        created: false,
+      };
+    } catch (error) {
+      await rollback(client);
+      if (error instanceof RepairError) {
+        throw error;
+      }
+      throw new RepairError("APPLY_FAILED", "Repair plan staging rolled back");
+    } finally {
+      client.release();
     }
-    return {
-      planId: row.plan_id,
-      evidenceSha256: envelope.evidenceSha256,
-      status: row.status,
-      created: false,
-    };
   }
 
   async applyRepairPlan(input: ApplyProjectionRepairInput): Promise<AppliedRepairReceipt> {
@@ -381,6 +581,40 @@ export class ProjectionRepairService {
          WHERE plan_id = $1`,
         [plan.plan_id],
       );
+      const existingAudit = auditResult.rows[0];
+      if (existingAudit !== undefined) {
+        const currentResult = await client.query<OrderViewRow>(
+          `SELECT
+             order_id, total_cents::text, paid_cents::text, payment_status,
+             fulfillment_status, last_stream_version, row_version::text
+           FROM order_view
+           WHERE order_id = $1`,
+          [plan.stream_id],
+        );
+        const currentRow = currentResult.rows[0];
+        if (currentRow === undefined) {
+          throw new RepairError("VERIFICATION_FAILED", "Applied projection row is missing");
+        }
+        const { rowVersion: _rowVersion, ...currentBusinessValue } =
+          canonicalCurrentRow(currentRow);
+        const currentBusiness = fingerprintCandidateProjection(currentBusinessValue);
+        if (
+          currentBusiness.sha256 !== existingAudit.after_row_sha256 ||
+          canonicalSha256(existingAudit.after_row) !== existingAudit.after_row_sha256
+        ) {
+          throw new RepairError(
+            "VERIFICATION_FAILED",
+            "Applied repair audit no longer matches the projection row",
+          );
+        }
+        await client.query("ROLLBACK");
+        return {
+          status: "ALREADY_APPLIED",
+          planId: plan.plan_id,
+          auditId: existingAudit.audit_id,
+          receiptSha256: existingAudit.receipt_sha256,
+        };
+      }
 
       const runtimeResult = await client.query<RuntimeRow>(
         `SELECT generation::text, reducer_sha256, source_commit_sha, algorithm_version, gap_strategy
@@ -407,12 +641,7 @@ export class ProjectionRepairService {
       }
 
       const rowResult = await client.query<OrderViewRow>(
-        `SELECT
-           order_id, total_cents::text, paid_cents::text, payment_status,
-           fulfillment_status, last_stream_version, row_version::text
-         FROM order_view
-         WHERE order_id = $1
-         FOR UPDATE`,
+        "SELECT * FROM lock_order_view_for_repair($1)",
         [plan.stream_id],
       );
       const currentRow = rowResult.rows[0];
@@ -420,29 +649,6 @@ export class ProjectionRepairService {
         throw new RepairError("STALE_PLAN", "Projection row no longer exists", ["row"]);
       }
       await this.options.afterLocks?.();
-
-      const existingAudit = auditResult.rows[0];
-      if (existingAudit !== undefined) {
-        const { rowVersion: _rowVersion, ...currentBusinessValue } =
-          canonicalCurrentRow(currentRow);
-        const currentBusiness = fingerprintCandidateProjection(currentBusinessValue);
-        if (
-          currentBusiness.sha256 !== existingAudit.after_row_sha256 ||
-          canonicalSha256(existingAudit.after_row) !== existingAudit.after_row_sha256
-        ) {
-          throw new RepairError(
-            "VERIFICATION_FAILED",
-            "Applied repair audit no longer matches the projection row",
-          );
-        }
-        await client.query("ROLLBACK");
-        return {
-          status: "ALREADY_APPLIED",
-          planId: plan.plan_id,
-          auditId: existingAudit.audit_id,
-          receiptSha256: existingAudit.receipt_sha256,
-        };
-      }
 
       if (plan.status !== "PREPARED") {
         throw new RepairError("PLAN_INVALID", "Repair plan is not prepared");
@@ -465,22 +671,13 @@ export class ProjectionRepairService {
         throw error;
       }
 
-      const eventsResult = await client.query<EventRow>(
-        `SELECT
-           event_id, global_position::text, stream_id, stream_version,
-           event_type, payload, metadata, recorded_at
-         FROM events
-         WHERE stream_id = $1
-         ORDER BY stream_version`,
-        [plan.stream_id],
+      const streamSnapshot = await loadBoundedStream(
+        client,
+        plan.stream_id,
+        streamHead.version,
+        this.options.maxEvents,
+        this.options.maxCanonicalBytes,
       );
-      const streamSnapshot = snapshotEventStream({
-        streamId: plan.stream_id,
-        headVersion: streamHead.version,
-        events: eventsResult.rows.map(storedEvent),
-        maxEvents: this.options.maxEvents,
-        maxCanonicalBytes: this.options.maxCanonicalBytes,
-      });
       const currentFingerprint = fingerprintCurrentProjectionRow(canonicalCurrentRow(currentRow));
       const earlyMismatches = this.findMismatches(
         plan,
@@ -535,31 +732,6 @@ export class ProjectionRepairService {
       }
 
       const candidate = candidateFingerprint.value;
-      const updateResult = await client.query(
-        `UPDATE order_view
-         SET total_cents = $2::bigint,
-             paid_cents = $3::bigint,
-             payment_status = $4,
-             fulfillment_status = $5,
-             last_stream_version = $6,
-             row_version = row_version + 1,
-             updated_at = clock_timestamp()
-         WHERE order_id = $1
-           AND row_version = $7::bigint`,
-        [
-          plan.stream_id,
-          candidate.totalCents,
-          candidate.paidCents,
-          candidate.paymentStatus,
-          candidate.fulfillmentStatus,
-          candidate.lastStreamVersion,
-          plan.current_row_version,
-        ],
-      );
-      if (updateResult.rowCount !== 1) {
-        throw new RepairError("STALE_PLAN", "Projection compare-and-swap failed", ["row"]);
-      }
-
       await this.options.beforeAuditInsert?.();
       const auditId = z.uuid().parse(this.options.generateAuditId());
       const appliedTime = await client.query<{ applied_at: Date }>(
@@ -616,6 +788,13 @@ export class ProjectionRepairService {
           receiptSha256,
         ],
       );
+      const updateResult = await client.query<{ affected_rows: string }>(
+        `SELECT apply_order_view_repair($1::uuid, $2::bigint)::text AS affected_rows`,
+        [plan.plan_id, plan.current_row_version],
+      );
+      if (updateResult.rows[0]?.affected_rows !== "1") {
+        throw new RepairError("STALE_PLAN", "Projection compare-and-swap failed", ["row"]);
+      }
       const completion = await client.query(
         `UPDATE projection_repair_plans
          SET status = 'APPLIED', applied_at = $2::timestamptz

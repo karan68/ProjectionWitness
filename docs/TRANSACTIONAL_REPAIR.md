@@ -11,8 +11,12 @@ package; they will call this typed boundary in later PRs.
 
 ## Plan Staging
 
-`stageRepairPlan` verifies the complete canonical envelope before insertion. The database stores
-stream, runtime, current-row, candidate, expiry, and envelope digests as immutable columns.
+`stageRepairPlan` first requires canonical millisecond-UTC timestamps and safe-integer decimal
+cents. In a repeatable-read transaction it reloads the live runtime, bounded stream, and current
+row, runs the approved reducer artifact, and requires every resulting digest to equal the envelope
+before insertion. A structurally valid or self-hashed caller-authored candidate is therefore not
+stageable. The database stores stream, runtime, current-row, candidate, expiry, and envelope
+digests as immutable columns and independently constrains plan cents to the safe-integer range.
 Staging the same `evidenceSha256` is idempotent and returns the existing plan. A trigger permits no
 evidence changes and allows `PREPARED -> APPLIED` only when the same transaction has already
 inserted the plan's audit row.
@@ -43,11 +47,19 @@ While those locks are held, it:
 The row update, audit insert, and plan completion commit together. Any exception rolls the entire
 transaction back.
 
+Event count and raw serialized bytes are checked in PostgreSQL over at most `maxEvents + 1` rows
+before event payloads are returned to Node. Canonical byte limits are then enforced again by the
+evidence package. Repeated apply checks the stored audit immediately after locking the plan and can
+return `ALREADY_APPLIED` without waiting on runtime or stream locks.
+
 ## Database Boundary
 
 `pw_mcp_write` can lock runtime and stream rows through narrow key-column update privileges, but
-defensive triggers reject actual updates to those tables by that role. It can insert plans/audits,
-perform the typed order-row update, and complete a plan subject to the evidence and audit triggers.
+defensive triggers reject actual updates to those tables by that role. It has no direct
+`order_view` update privilege. Security-definer routines expose only one-row locking and a
+plan-bound row-version CAS; the CAS derives all candidate fields from the prepared plan and refuses
+to run until the same transaction has inserted its audit row. It can insert plans/audits and
+complete a plan subject to the evidence and audit triggers.
 `pw_mcp_read` can inspect plans and audits but cannot mutate them. Audit updates and deletes are
 rejected even for the schema owner.
 

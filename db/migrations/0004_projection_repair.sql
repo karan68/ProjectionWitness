@@ -21,6 +21,18 @@ CREATE TABLE projection_repair_plans (
     applied_at timestamptz,
     CHECK (expires_at > created_at),
     CHECK (
+        current_row ?& ARRAY['totalCents', 'paidCents']
+        AND candidate_row ?& ARRAY['totalCents', 'paidCents']
+        AND (current_row->>'totalCents') ~ '^(0|[1-9][0-9]*)$'
+        AND (current_row->>'paidCents') ~ '^(0|[1-9][0-9]*)$'
+        AND (candidate_row->>'totalCents') ~ '^(0|[1-9][0-9]*)$'
+        AND (candidate_row->>'paidCents') ~ '^(0|[1-9][0-9]*)$'
+        AND (current_row->>'totalCents')::numeric <= 9007199254740991
+        AND (current_row->>'paidCents')::numeric <= 9007199254740991
+        AND (candidate_row->>'totalCents')::numeric <= 9007199254740991
+        AND (candidate_row->>'paidCents')::numeric <= 9007199254740991
+    ),
+    CHECK (
         (status = 'PREPARED' AND applied_at IS NULL)
         OR (status = 'APPLIED' AND applied_at IS NOT NULL)
     )
@@ -135,6 +147,82 @@ BEFORE UPDATE ON event_streams
 FOR EACH ROW
 EXECUTE FUNCTION reject_repair_role_lock_row_mutation();
 
+CREATE FUNCTION lock_order_view_for_repair(target_order_id text)
+RETURNS TABLE (
+    order_id text,
+    total_cents text,
+    paid_cents text,
+    payment_status text,
+    fulfillment_status text,
+    last_stream_version integer,
+    row_version text
+)
+LANGUAGE sql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+    SELECT
+        view.order_id,
+        view.total_cents::text,
+        view.paid_cents::text,
+        view.payment_status,
+        view.fulfillment_status,
+        view.last_stream_version,
+        view.row_version::text
+    FROM order_view AS view
+    WHERE view.order_id = target_order_id
+    FOR UPDATE;
+$$;
+
+CREATE FUNCTION apply_order_view_repair(
+    target_plan_id uuid,
+    expected_row_version bigint
+)
+RETURNS bigint
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = pg_catalog, public
+AS $$
+DECLARE
+    affected_rows bigint;
+    selected_plan projection_repair_plans%ROWTYPE;
+BEGIN
+    SELECT *
+    INTO selected_plan
+    FROM projection_repair_plans
+    WHERE plan_id = target_plan_id
+      AND status = 'PREPARED';
+    IF NOT FOUND THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'repair plan is not prepared';
+    END IF;
+    IF NOT EXISTS (
+        SELECT 1 FROM projection_repair_audit WHERE plan_id = target_plan_id
+    ) THEN
+        RAISE EXCEPTION USING
+            ERRCODE = '55000',
+            MESSAGE = 'repair audit must exist before row update';
+    END IF;
+
+    UPDATE order_view
+    SET total_cents = (selected_plan.candidate_row->>'totalCents')::bigint,
+        paid_cents = (selected_plan.candidate_row->>'paidCents')::bigint,
+        payment_status = selected_plan.candidate_row->>'paymentStatus',
+        fulfillment_status = selected_plan.candidate_row->>'fulfillmentStatus',
+        last_stream_version = (selected_plan.candidate_row->>'lastStreamVersion')::integer,
+        row_version = row_version + 1,
+        updated_at = clock_timestamp()
+    WHERE order_id = selected_plan.stream_id
+      AND row_version = expected_row_version;
+    GET DIAGNOSTICS affected_rows = ROW_COUNT;
+    RETURN affected_rows;
+END;
+$$;
+
+REVOKE ALL ON FUNCTION lock_order_view_for_repair(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION apply_order_view_repair(uuid, bigint) FROM PUBLIC;
+
 REVOKE ALL ON projection_repair_plans, projection_repair_audit FROM PUBLIC;
 
 GRANT SELECT ON projection_repair_plans, projection_repair_audit TO pw_mcp_read;
@@ -143,4 +231,5 @@ GRANT SELECT, INSERT, UPDATE ON projection_repair_plans TO pw_mcp_write;
 GRANT SELECT, INSERT ON projection_repair_audit TO pw_mcp_write;
 GRANT UPDATE (projection_name) ON projection_runtime TO pw_mcp_write;
 GRANT UPDATE (stream_id) ON event_streams TO pw_mcp_write;
-GRANT UPDATE ON order_view TO pw_mcp_write;
+GRANT EXECUTE ON FUNCTION lock_order_view_for_repair(text) TO pw_mcp_write;
+GRANT EXECUTE ON FUNCTION apply_order_view_repair(uuid, bigint) TO pw_mcp_write;

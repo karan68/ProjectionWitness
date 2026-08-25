@@ -9,6 +9,8 @@ import {
 import { ApprovedOrderReducerSha256 } from "@projection-witness/projector";
 import {
   buildRepairEnvelope,
+  canonicalSha256,
+  fingerprintCandidateProjection,
   runReducerArtifactEvidence,
   type CurrentProjectionRow,
   type RepairEnvelope,
@@ -25,6 +27,14 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 function environmentVariable(name: string): string | undefined {
   return process.env[name];
+}
+
+function resealEnvelope(
+  envelope: RepairEnvelope,
+  overrides: Partial<Omit<RepairEnvelope, "evidenceSha256">>,
+): RepairEnvelope {
+  const { evidenceSha256: _evidenceSha256, ...unsigned } = { ...envelope, ...overrides };
+  return { ...unsigned, evidenceSha256: canonicalSha256(unsigned) };
 }
 
 function deferred(): { promise: Promise<void>; resolve: () => void } {
@@ -268,8 +278,55 @@ describeWithDatabase("transactional projection repair", () => {
       last_stream_version: 2,
       row_version: "2",
     });
-    const repeated = await repair.applyRepairPlan(testCase.approval);
-    expect(repeated).toEqual({ ...applied, status: "ALREADY_APPLIED" });
+    const runtimeBlocker = await migratorPool.connect();
+    try {
+      await runtimeBlocker.query("BEGIN");
+      await runtimeBlocker.query(
+        "SELECT 1 FROM projection_runtime WHERE projection_name = $1 FOR UPDATE",
+        [testCase.projectionName],
+      );
+      const repeated = await service({ lockTimeoutMs: 100 }).applyRepairPlan(testCase.approval);
+      expect(repeated).toEqual({ ...applied, status: "ALREADY_APPLIED" });
+    } finally {
+      await runtimeBlocker.query("ROLLBACK").catch(() => undefined);
+      runtimeBlocker.release();
+    }
+  });
+
+  it("refuses noncanonical timestamps, forged candidates, and unsafe cents at staging", async () => {
+    const repair = service();
+    const timestampCase = await createCase();
+    const timestampEnvelope = resealEnvelope(timestampCase.envelope, {
+      createdAt: timestampCase.envelope.createdAt.replace("Z", "+00:00"),
+      expiresAt: timestampCase.envelope.expiresAt.replace("Z", "+00:00"),
+    });
+    await expectRepairError(repair.stageRepairPlan(timestampEnvelope), "PLAN_INVALID");
+
+    const forgedCase = await createCase();
+    const forgedCandidate = fingerprintCandidateProjection({
+      ...forgedCase.envelope.candidateRow.value,
+      paidCents: "1",
+      paymentStatus: "PARTIALLY_PAID",
+    });
+    await expectRepairError(
+      repair.stageRepairPlan(
+        resealEnvelope(forgedCase.envelope, { candidateRow: forgedCandidate }),
+      ),
+      "PLAN_INVALID",
+    );
+
+    const unsafeCase = await createCase();
+    const unsafeCandidate = fingerprintCandidateProjection({
+      ...unsafeCase.envelope.candidateRow.value,
+      totalCents: "9007199254740992",
+      paidCents: "9007199254740992",
+    });
+    await expectRepairError(
+      repair.stageRepairPlan(
+        resealEnvelope(unsafeCase.envelope, { candidateRow: unsafeCandidate }),
+      ),
+      "PLAN_INVALID",
+    );
   });
 
   it("refuses a concurrent stream change with zero repair writes", async () => {
@@ -404,6 +461,16 @@ describeWithDatabase("transactional projection repair", () => {
     await expectZeroRepairWrites(testCase);
   });
 
+  it("refuses a stream over the configured event limit before materializing it", async () => {
+    const testCase = await createCase();
+    await service().stageRepairPlan(testCase.envelope);
+    await expectRepairError(
+      service({ maxEvents: 1 }).applyRepairPlan(testCase.approval),
+      "PLAN_INVALID",
+    );
+    await expectZeroRepairWrites(testCase);
+  });
+
   it("enforces immutable plan evidence, append-only audit, and read-role permissions", async () => {
     const testCase = await createCase();
     const repair = service();
@@ -431,6 +498,23 @@ describeWithDatabase("transactional projection repair", () => {
         testCase.streamId,
       ]),
     ).rejects.toMatchObject({ code: "42501" });
+    await expect(
+      mcpWritePool.query("UPDATE order_view SET order_id = $2 WHERE order_id = $1", [
+        testCase.streamId,
+        `MOVED-${testCase.streamId}`,
+      ]),
+    ).rejects.toMatchObject({ code: "42501" });
+    await expect(
+      mcpWritePool.query("UPDATE order_view SET paid_cents = 1 WHERE order_id = $1", [
+        testCase.streamId,
+      ]),
+    ).rejects.toMatchObject({ code: "42501" });
+    await expect(
+      mcpWritePool.query("SELECT apply_order_view_repair($1::uuid, $2::bigint)", [
+        testCase.envelope.planId,
+        testCase.envelope.currentRow.rowVersion,
+      ]),
+    ).rejects.toMatchObject({ code: "55000" });
     await repair.applyRepairPlan(testCase.approval);
     await expect(
       migratorPool.query(
