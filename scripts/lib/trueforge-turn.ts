@@ -40,6 +40,19 @@ interface TrueForgeTurnClient {
   };
 }
 
+interface TrueForgeSessionTurnClient extends TrueForgeTurnClient {
+  sessions: TrueForgeTurnClient["sessions"] & {
+    create(request: { agent: { name: string } }): Promise<{ data: { id: string } }>;
+    createTurn(
+      sessionId: string,
+      request: {
+        input: Array<{ type: "user.message"; content: string }>;
+        previousTurnId: "none";
+      },
+    ): Promise<{ data: { id: string } }>;
+  };
+}
+
 export async function readTurnCheckpoint(checkpointPath: string): Promise<TurnCheckpoint> {
   const checkpointStats = await stat(checkpointPath);
   if (!checkpointStats.isFile() || checkpointStats.size > MaximumCheckpointBytes) {
@@ -92,6 +105,32 @@ export async function consumeTurnStream(
     await onEvent(event);
   }
   return checkpoint;
+}
+
+export async function startTurn(
+  client: TrueForgeSessionTurnClient,
+  agentNameInput: string,
+  promptInput: string,
+  persist: (checkpoint: TurnCheckpoint) => Promise<void>,
+  onEvent: (event: z.infer<typeof TurnEventSchema>) => Promise<void> = async () => undefined,
+): Promise<TurnCheckpoint> {
+  const agentName = z.string().trim().min(1).max(128).parse(agentNameInput);
+  const prompt = z.string().trim().min(1).max(32_768).parse(promptInput);
+  const session = await client.sessions.create({ agent: { name: agentName } });
+  const turn = await client.sessions.createTurn(session.data.id, {
+    input: [{ type: "user.message", content: prompt }],
+    previousTurnId: "none",
+  });
+  const checkpoint = TurnCheckpointSchema.parse({
+    sessionId: session.data.id,
+    turnId: turn.data.id,
+    lastSequenceNumber: 0,
+  });
+  await persist(checkpoint);
+  const stream = await client.sessions.subscribeToTurn(checkpoint.sessionId, checkpoint.turnId, {
+    afterSequenceNumber: 0,
+  });
+  return consumeTurnStream(stream, checkpoint, persist, onEvent);
 }
 
 export async function collectPersistedTurnEvents(
