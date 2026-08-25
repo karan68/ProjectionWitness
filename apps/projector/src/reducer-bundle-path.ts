@@ -2,11 +2,14 @@ import { constants } from "node:fs";
 import { lstat, open, realpath } from "node:fs/promises";
 import { createHash } from "node:crypto";
 import { normalize, resolve } from "node:path";
+import { createContext, Script } from "node:vm";
 import { z } from "zod";
 import type { OrderReducer } from "./gap-aware-projector.js";
 
 const ReducerBundlePathSchema = z.string().trim().min(1).max(256);
-const AllowedReducerBundlePaths = ["artifacts/order-reducer.mjs"] as const;
+const ContentAddressedBundlePathSchema = z
+  .string()
+  .regex(/^artifacts\/order-reducer\.([0-9a-f]{64})\.cjs$/);
 
 export interface LoadedReducerBundle {
   reduceOrder: OrderReducer;
@@ -32,14 +35,10 @@ export async function resolveReducerBundlePath(
   input: string,
   projectRoot = process.cwd(),
 ): Promise<string> {
-  const parsed = ReducerBundlePathSchema.parse(input).replaceAll("\\", "/");
+  const normalizedInput = ReducerBundlePathSchema.parse(input).replaceAll("\\", "/");
+  const parsed = normalizedInput.startsWith("./") ? normalizedInput.slice(2) : normalizedInput;
+  ContentAddressedBundlePathSchema.parse(parsed);
   const requestedPath = normalize(resolve(projectRoot, parsed));
-  const allowedPaths = AllowedReducerBundlePaths.map((relativePath) =>
-    normalize(resolve(projectRoot, relativePath)),
-  );
-  if (!allowedPaths.includes(requestedPath)) {
-    throw new Error("REDUCER_BUNDLE_PATH must identify a known reducer artifact");
-  }
 
   const fileInfo = await lstat(requestedPath);
   assertRegularReducerBundle(fileInfo);
@@ -68,10 +67,29 @@ export async function loadReducerBundle(
   }
 
   const sha256 = createHash("sha256").update(bytes).digest("hex");
-  const dataUrl = `data:text/javascript;base64,${bytes.toString("base64")}`;
-  const reducerModule = (await import(dataUrl)) as { reduceOrder?: unknown };
-  if (!isOrderReducer(reducerModule.reduceOrder)) {
+  const filenameDigest = /\.([0-9a-f]{64})\.cjs$/.exec(bundlePath)?.[1];
+  if (filenameDigest !== sha256) {
+    throw new Error("REDUCER_BUNDLE_PATH filename does not match its SHA-256 digest");
+  }
+  const module = { exports: {} as { reduceOrder?: unknown } };
+  try {
+    const context = createContext({ module, exports: module.exports });
+    new Script(bytes.toString("utf8"), {
+      filename: "projection-witness-order-reducer.cjs",
+    }).runInContext(context);
+  } catch {
+    throw new Error("REDUCER_BUNDLE_PATH could not be evaluated safely");
+  }
+  if (!isOrderReducer(module.exports.reduceOrder)) {
     throw new Error("REDUCER_BUNDLE_PATH must export reduceOrder");
   }
-  return { reduceOrder: reducerModule.reduceOrder, sha256 };
+  const loadedReducer = module.exports.reduceOrder;
+  const reduceOrder: OrderReducer = (state, event) => {
+    try {
+      return loadedReducer(state, event);
+    } catch {
+      throw new Error("Attested reducer execution failed");
+    }
+  };
+  return { reduceOrder, sha256 };
 }

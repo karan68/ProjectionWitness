@@ -72,17 +72,21 @@ $env:DATABASE_URL_PROJECTOR = "postgresql://pw_projector:<local-password>@127.0.
 $env:PROJECTOR_MODE = "gap-aware-v1"
 $env:PROJECTOR_GENERATION = "2"
 $env:SOURCE_COMMIT_SHA = "<exact-built-commit>"
-$env:REDUCER_BUNDLE_PATH = ".\artifacts\order-reducer.mjs"
+$env:REDUCER_BUNDLE_PATH = ".\artifacts\order-reducer.<sha256-from-build>.cjs"
 
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run dev:projector:v2
 ```
 
 The process allows only the known artifact path and rejects symbolic links. It opens the regular
-file, reads and hashes it once, then imports those already-read bytes through a data URL. A
-concurrent build or path replacement therefore cannot make the manifest attest different bytes
-than the reducer being executed. The projector registers that digest through `pw_projector`, then
-begins polling. Runtime attestation remains evidence that future repair code must independently
-lock and recheck.
+content-addressed file, checks the filename digest, reads and hashes it once, then evaluates those
+already-read bytes in a restricted VM context
+under a fixed non-secret filename. A concurrent build or path replacement therefore cannot make
+the manifest attest different bytes than the reducer being executed, and failures cannot expose an
+encoded source URL. Builds publish immutable digest-named files through a same-directory temporary
+file, `fsync`, and atomic rename; concurrent builders either create or verify the same complete
+artifact without replacing a live file.
+The projector registers that digest through `pw_projector`, then begins polling. Runtime
+attestation remains evidence that future repair code must independently lock and recheck.
 
 ## Verified Evidence
 

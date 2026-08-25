@@ -11,12 +11,15 @@ import { afterEach, describe, expect, it } from "vitest";
 
 const temporaryDirectories: string[] = [];
 
-async function projectFixture(): Promise<string> {
+async function projectFixture(source = "module.exports = {};") {
   const root = await mkdtemp(join(tmpdir(), "projection-witness-path-"));
   temporaryDirectories.push(root);
   await mkdir(join(root, "artifacts"), { recursive: true });
-  await writeFile(join(root, "artifacts", "order-reducer.mjs"), "export {};");
-  return root;
+  const sha256 = createHash("sha256").update(source).digest("hex");
+  const relativePath = `artifacts/order-reducer.${sha256}.cjs`;
+  const artifactPath = join(root, relativePath);
+  await writeFile(artifactPath, source);
+  return { artifactPath, relativePath, root, sha256 };
 }
 
 afterEach(async () => {
@@ -28,13 +31,15 @@ afterEach(async () => {
 });
 
 describe("reducer bundle path", () => {
-  it.each(["artifacts/order-reducer.mjs", ".\\artifacts\\order-reducer.mjs"])(
-    "accepts the known regular artifact %s",
-    async (input) => {
-      const root = await projectFixture();
-      await expect(resolveReducerBundlePath(input, root)).resolves.toMatch(/order-reducer\.mjs$/);
-    },
-  );
+  it("accepts a content-addressed regular artifact", async () => {
+    const fixture = await projectFixture();
+    await expect(resolveReducerBundlePath(fixture.relativePath, fixture.root)).resolves.toBe(
+      fixture.artifactPath,
+    );
+    await expect(
+      resolveReducerBundlePath(`.\\${fixture.relativePath.replaceAll("/", "\\")}`, fixture.root),
+    ).resolves.toBe(fixture.artifactPath);
+  });
 
   it("rejects a symbolic link at the allow-listed path", () => {
     expect(() =>
@@ -49,31 +54,28 @@ describe("reducer bundle path", () => {
     "../outside.mjs",
     "scripts/run-naive-v1.ts",
     "artifacts/other.mjs",
-    "C:/tmp/order-reducer.mjs",
+    "C:/tmp/order-reducer.cjs",
   ])("rejects an unapproved path %s", async (input) => {
-    const root = await projectFixture();
-    await expect(resolveReducerBundlePath(input, root)).rejects.toThrow(/known reducer artifact/);
+    const fixture = await projectFixture();
+    await expect(resolveReducerBundlePath(input, fixture.root)).rejects.toThrow();
   });
 
   it("rejects a missing allow-listed artifact", async () => {
-    const root = await projectFixture();
-    await rm(join(root, "artifacts", "order-reducer.mjs"));
-    await expect(resolveReducerBundlePath("artifacts/order-reducer.mjs", root)).rejects.toThrow();
+    const fixture = await projectFixture();
+    await rm(fixture.artifactPath);
+    await expect(resolveReducerBundlePath(fixture.relativePath, fixture.root)).rejects.toThrow();
   });
 
-  it("hashes and executes the same bytes when import-time code replaces the path", async () => {
-    const root = await projectFixture();
-    const artifactPath = join(root, "artifacts", "order-reducer.mjs");
-    const replacement = "export function reduceOrder() { throw new Error('replacement'); }";
-    const source = `import { writeFileSync } from "node:fs";
-writeFileSync(${JSON.stringify(artifactPath)}, ${JSON.stringify(replacement)});
-export function reduceOrder(state, event) {
+  it("keeps executing the hashed bytes when the artifact path changes after loading", async () => {
+    const replacement = "module.exports.reduceOrder = () => { throw new Error('replacement'); };";
+    const source = `module.exports.reduceOrder = function (state, event) {
   return state ?? { orderId: event.streamId, totalCents: event.totalCents, paidCents: 0, paymentStatus: "AWAITING_PAYMENT", fulfillmentStatus: "NOT_SHIPPED", lastStreamVersion: event.streamVersion };
-}`;
-    await writeFile(artifactPath, source);
+};`;
+    const fixture = await projectFixture(source);
 
-    const loaded = await loadReducerBundle("artifacts/order-reducer.mjs", root);
-    expect(loaded.sha256).toBe(createHash("sha256").update(source).digest("hex"));
+    const loaded = await loadReducerBundle(fixture.relativePath, fixture.root);
+    await writeFile(fixture.artifactPath, replacement);
+    expect(loaded.sha256).toBe(fixture.sha256);
     expect(
       loaded.reduceOrder(null, {
         type: "OrderPlaced",
@@ -82,6 +84,34 @@ export function reduceOrder(state, event) {
         totalCents: 100,
       }),
     ).toMatchObject({ orderId: "ORD-LOADED", totalCents: 100 });
-    expect(await readFile(artifactPath, "utf8")).toBe(replacement);
+    expect(await readFile(fixture.artifactPath, "utf8")).toBe(replacement);
+  });
+
+  it("redacts bundle source from evaluation and reducer failures", async () => {
+    const importFailure = await projectFixture("throw new Error('PRIVATE_IMPORT_SOURCE');");
+    await expect(loadReducerBundle(importFailure.relativePath, importFailure.root)).rejects.toThrow(
+      "REDUCER_BUNDLE_PATH could not be evaluated safely",
+    );
+
+    const reducerFailure = await projectFixture(
+      "module.exports.reduceOrder = () => { throw new Error('PRIVATE_REDUCER_SOURCE'); };",
+    );
+    const loaded = await loadReducerBundle(reducerFailure.relativePath, reducerFailure.root);
+    expect(() =>
+      loaded.reduceOrder(null, {
+        type: "OrderPlaced",
+        streamId: "ORD-REDACTED",
+        streamVersion: 1,
+        totalCents: 100,
+      }),
+    ).toThrow("Attested reducer execution failed");
+  });
+
+  it("rejects bytes that do not match the content-addressed filename", async () => {
+    const fixture = await projectFixture();
+    await writeFile(fixture.artifactPath, "module.exports = { changed: true };");
+    await expect(loadReducerBundle(fixture.relativePath, fixture.root)).rejects.toThrow(
+      /filename does not match/,
+    );
   });
 });
