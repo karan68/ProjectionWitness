@@ -121,6 +121,60 @@ describe("reducer bundle path", () => {
     ).rejects.toThrow(/timed out/);
   });
 
+  it("awaits asynchronous reducer implementations", async () => {
+    const result = await executeReducerSource(
+      `module.exports.reduceOrder = async (state, event) => state ?? {
+  orderId: event.streamId,
+  totalCents: event.totalCents,
+  paidCents: 0,
+  paymentStatus: "AWAITING_PAYMENT",
+  fulfillmentStatus: "NOT_SHIPPED",
+  lastStreamVersion: event.streamVersion,
+};`,
+      {
+        type: "reduce",
+        state: null,
+        event: {
+          type: "OrderPlaced",
+          streamId: "ORD-ASYNC",
+          streamVersion: 1,
+          totalCents: 100,
+        },
+      },
+    );
+    expect(result).toBeDefined();
+    expect(
+      validateDeterministicReducerResults(result ?? { first: null, second: null }),
+    ).toMatchObject({ orderId: "ORD-ASYNC" });
+  });
+
+  it("detects nondeterministic state chosen during module initialization", async () => {
+    const result = await executeReducerSource(
+      `const chosen = __projectionWitnessReplayPass;
+module.exports.reduceOrder = (state, event) => state ?? {
+  orderId: event.streamId,
+  totalCents: event.totalCents,
+  paidCents: chosen,
+  paymentStatus: "AWAITING_PAYMENT",
+  fulfillmentStatus: "NOT_SHIPPED",
+  lastStreamVersion: event.streamVersion,
+};`,
+      {
+        type: "reduce",
+        state: null,
+        event: {
+          type: "OrderPlaced",
+          streamId: "ORD-MODULE-STATE",
+          streamVersion: 1,
+          totalCents: 100,
+        },
+      },
+    );
+    expect(() =>
+      validateDeterministicReducerResults(result ?? { first: null, second: null }),
+    ).toThrow();
+  });
+
   it("rejects invalid or nondeterministic worker output", () => {
     expect(() => validateDeterministicReducerResults({ first: {}, second: {} })).toThrow();
     expect(() =>
@@ -151,6 +205,18 @@ describe("reducer bundle path", () => {
     await expect(loadReducerBundle(fixture.relativePath, fixture.root)).rejects.toThrow(
       /1048576 byte limit/,
     );
+  });
+
+  it("rejects invalid UTF-8 before artifact approval or evaluation", async () => {
+    const root = await mkdtemp(join(tmpdir(), "projection-witness-path-"));
+    temporaryDirectories.push(root);
+    await mkdir(join(root, "artifacts"), { recursive: true });
+    const bytes = Buffer.from([0xff, 0xfe, 0xfd]);
+    const sha256 = createHash("sha256").update(bytes).digest("hex");
+    const relativePath = `artifacts/order-reducer.${sha256}.cjs`;
+    await writeFile(join(root, relativePath), bytes);
+
+    await expect(loadReducerBundle(relativePath, root)).rejects.toThrow(/not valid UTF-8/);
   });
 
   it("rejects bytes that do not match the content-addressed filename", async () => {
