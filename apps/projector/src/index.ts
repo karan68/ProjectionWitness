@@ -10,6 +10,7 @@ export {
   type ProjectorPollResult,
 } from "./naive-projector.js";
 export {
+  ApprovedOrderReducerSha256,
   assertRegularReducerBundle,
   loadReducerBundle,
   resolveReducerBundlePath,
