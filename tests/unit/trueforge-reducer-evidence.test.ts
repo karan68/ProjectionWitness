@@ -12,6 +12,8 @@ import {
   DaytonaEvidenceScriptSha256,
   DaytonaNodeArchiveName,
   DaytonaNodeArchiveSha256,
+  DaytonaLauncherWorstCaseSeconds,
+  DaytonaProviderExecTimeoutSeconds,
 } from "../../scripts/lib/trueforge-daytona-command.js";
 import { execFile, type ExecFileException } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
@@ -148,6 +150,8 @@ describe("TrueForge reducer evidence verification", () => {
     expect(built).toContain("hashlib.sha256(data)");
     expect(built).toContain("subprocess.run");
     expect(built).toContain('rm -rf "$root"; exit "$status"');
+    expect(DaytonaLauncherWorstCaseSeconds).toBe(179);
+    expect(DaytonaLauncherWorstCaseSeconds).toBeLessThan(DaytonaProviderExecTimeoutSeconds);
     expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
     expect(DaytonaNodeArchiveSha256).toBe(
       "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
@@ -241,6 +245,21 @@ test "$count" -eq 2
     const cleanup = await execFileAsync(shellPath, [
       "-c",
       `test ! -e '${rootPath}' && printf cleaned`,
+    ]);
+    expect(cleanup.stdout).toBe("cleaned");
+  });
+
+  it("cleans the private root when setup fails before script execution", async () => {
+    const markerPath = `/tmp/projection-witness-root-marker-${randomUUID()}`;
+    const shellPath = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\sh.exe" : "sh";
+    const instrumentedCommand = buildTrueForgeDaytonaEvidenceCommand("d".repeat(40), "e".repeat(64))
+      .replace('work="$root/work";', `work="$root/work"; printf '%s' "$root" > '${markerPath}';`)
+      .replace("curl --fail", "/bin/false --fail");
+
+    await expect(execFileAsync(shellPath, ["-c", instrumentedCommand])).rejects.toBeDefined();
+    const cleanup = await execFileAsync(shellPath, [
+      "-c",
+      `root="$(cat '${markerPath}')"; test ! -e "$root"; rm -f '${markerPath}'; printf cleaned`,
     ]);
     expect(cleanup.stdout).toBe("cleaned");
   });

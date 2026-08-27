@@ -6,6 +6,22 @@ export const DaytonaNodeArchiveSha256 =
 export const DaytonaEvidenceScriptName = "daytona-reducer-evidence.sh";
 export const DaytonaEvidenceScriptSha256 =
   "619fab9f4375c84b402c52b21597aeafcd3d414e942f7dca347cf6f53ca7f3ab";
+export const DaytonaProviderExecTimeoutSeconds = 180;
+
+const ScriptDownloadTimeoutSeconds = 12;
+const ScriptDownloadKillAfterSeconds = 2;
+const EvidenceExecutionTimeoutSeconds = 140;
+const EvidenceExecutionKillAfterSeconds = 5;
+const EvidenceExecutionOuterMarginSeconds = 5;
+const LauncherSetupCleanupMarginSeconds = 10;
+export const DaytonaLauncherWorstCaseSeconds =
+  ScriptDownloadTimeoutSeconds +
+  ScriptDownloadKillAfterSeconds +
+  EvidenceExecutionTimeoutSeconds +
+  EvidenceExecutionKillAfterSeconds +
+  EvidenceExecutionOuterMarginSeconds +
+  EvidenceExecutionKillAfterSeconds +
+  LauncherSetupCleanupMarginSeconds;
 
 const CommitShaSchema = z.string().regex(/^[0-9a-f]{40}$/);
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
@@ -37,14 +53,20 @@ export function buildBoundedEvidenceScriptExecutionCommand(
   const commitSha = CommitShaSchema.parse(commitShaInput);
   const reducerSha256 = Sha256Schema.parse(reducerSha256Input);
   const scriptSha256 = Sha256Schema.parse(scriptSha256Input);
-  const aggregateTimeout = TimeoutSecondsSchema.parse(options.aggregateTimeoutSeconds ?? 155);
+  const aggregateTimeout = TimeoutSecondsSchema.parse(
+    options.aggregateTimeoutSeconds ?? EvidenceExecutionTimeoutSeconds,
+  );
   const killAfter = TimeoutSecondsSchema.parse(options.killAfterSeconds ?? 5);
-  const outerTimeout = aggregateTimeout + killAfter + 5;
+  const outerTimeout = aggregateTimeout + killAfter + EvidenceExecutionOuterMarginSeconds;
   if (outerTimeout + killAfter >= 180) {
     throw new Error("Evidence script timeout must leave margin below the provider deadline");
   }
   const python = `import hashlib,pathlib,subprocess,sys; data=pathlib.Path(sys.argv[1]).read_bytes(); hashlib.sha256(data).hexdigest()==sys.argv[2] or sys.exit(3); result=subprocess.run(["timeout","--kill-after=${killAfter}s","${aggregateTimeout}s","sh","-s","--",sys.argv[3],sys.argv[4],sys.argv[5]],input=data); sys.exit(result.returncode)`;
   return `status=0; timeout --kill-after=${killAfter}s ${outerTimeout}s python3 -c '${python}' "$script" '${scriptSha256}' '${commitSha}' '${reducerSha256}' "$work" || status=$?; rm -rf "$root"; exit "$status"`;
+}
+
+function buildPrivateEvidenceRootSetupCommand(): string {
+  return `umask 077; root=/tmp/projection-witness-launcher.$$; mkdir "$root"; trap 'rm -rf "$root"' EXIT; script="$root/${DaytonaEvidenceScriptName}"; work="$root/work"`;
 }
 
 export function buildTrueForgeDaytonaEvidenceCommand(
@@ -53,5 +75,8 @@ export function buildTrueForgeDaytonaEvidenceCommand(
 ): string {
   const commitSha = CommitShaSchema.parse(commitShaInput);
   const reducerSha256 = Sha256Schema.parse(reducerSha256Input);
-  return `set -euo pipefail; umask 077; root=/tmp/projection-witness-launcher.$$; mkdir "$root"; script="$root/${DaytonaEvidenceScriptName}"; work="$root/work"; timeout --kill-after=2s 12s curl --fail --show-error --location --retry 5 --retry-all-errors --connect-timeout 6 --max-time 6 --retry-max-time 10 --output "$script" 'https://raw.githubusercontent.com/karan68/ProjectionWitness/${commitSha}/scripts/${DaytonaEvidenceScriptName}'; chmod 400 "$script"; ${buildBoundedEvidenceScriptExecutionCommand(commitSha, reducerSha256)}`;
+  if (DaytonaLauncherWorstCaseSeconds >= DaytonaProviderExecTimeoutSeconds) {
+    throw new Error("Daytona launcher must remain below the provider execution deadline");
+  }
+  return `set -euo pipefail; ${buildPrivateEvidenceRootSetupCommand()}; timeout --kill-after=${ScriptDownloadKillAfterSeconds}s ${ScriptDownloadTimeoutSeconds}s curl --fail --show-error --location --retry 5 --retry-all-errors --connect-timeout 6 --max-time 6 --retry-max-time 10 --output "$script" 'https://raw.githubusercontent.com/karan68/ProjectionWitness/${commitSha}/scripts/${DaytonaEvidenceScriptName}'; chmod 400 "$script"; ${buildBoundedEvidenceScriptExecutionCommand(commitSha, reducerSha256, DaytonaEvidenceScriptSha256, { aggregateTimeoutSeconds: EvidenceExecutionTimeoutSeconds, killAfterSeconds: EvidenceExecutionKillAfterSeconds })}`;
 }
