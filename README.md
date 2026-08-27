@@ -17,6 +17,16 @@ sandbox, parallel dynamic subagents, running-turn reconnect, and native denial/a
 operator-owned video and official submission steps remain, as tracked in
 [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
+## Qodo Code Review Evidence
+
+Representative substantive merge: [PR #11, retryable and bounded exact-commit Daytona
+evidence](https://github.com/karan68/ProjectionWitness/pull/11). Qodo surfaced hard-timeout,
+pathname TOCTOU, input-validation, cleanup, and focused-test gaps. The accepted fixes bind hashing
+and execution to the same bytes, enforce aggregate TERM/KILL deadlines, clean every launcher exit,
+and add executable regressions; the follow-up review on the final head reported zero bugs and zero
+rule violations. The complete finding, decision, fix, and merge history is in
+[docs/QODO_EVIDENCE.md](docs/QODO_EVIDENCE.md).
+
 ## Prerequisites
 
 - Node.js `22.23.2` with npm `10.9.9` installed over the bundled npm release.
