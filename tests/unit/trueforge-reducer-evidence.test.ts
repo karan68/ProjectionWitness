@@ -100,7 +100,9 @@ describe("TrueForge reducer evidence verification", () => {
     );
     expect(built).toContain(`${DaytonaNodeArchiveSha256}' '${DaytonaNodeArchiveName}`);
     expect(built).toContain(`tar -xzf ${DaytonaNodeArchiveName}`);
-    expect(built).toContain("timeout 80s sh -c 'for attempt in 1 2; do timeout 35s npm ci");
+    expect(built).toContain(
+      "timeout --kill-after=2s 80s sh -c 'for attempt in 1 2; do timeout --kill-after=2s 35s npm ci",
+    );
     expect(built).toContain("npm ci --include=dev --no-audit --no-fund --loglevel warn");
     expect(built).toContain("--fetch-retries 2");
     expect(built).toContain("rm -rf node_modules; done; exit 1'");
@@ -129,24 +131,28 @@ count=0
 test ! -f "$PW_RETRY_COUNT_FILE" || count="$(cat "$PW_RETRY_COUNT_FILE")"
 count=$((count + 1))
 printf '%s' "$count" > "$PW_RETRY_COUNT_FILE"
-test "$count" -ne 1 || sleep 2
+if test "$count" -eq 1; then
+  trap '' TERM
+  sleep 10
+fi
 test "$count" -eq 2
 `,
     );
     await chmod(npmPath, 0o755);
 
     try {
+      const { PATH: currentPath = "" } = process.env;
       const startedAt = Date.now();
-      await execFileAsync(shellPath, ["-c", buildBoundedNpmCiCommand(5, 1)], {
+      await execFileAsync(shellPath, ["-c", buildBoundedNpmCiCommand(8, 2, 1)], {
         cwd: temporaryDirectory,
         env: {
           ...process.env,
-          PATH: `${binaryDirectory}${delimiter}${process.env.PATH ?? ""}`,
+          PATH: `${binaryDirectory}${delimiter}${currentPath}`,
           PW_RETRY_COUNT_FILE: countPath,
         },
       });
       expect(await readFile(countPath, "utf8")).toBe("2");
-      expect(Date.now() - startedAt).toBeLessThan(5_000);
+      expect(Date.now() - startedAt).toBeLessThan(8_000);
     } finally {
       await rm(temporaryDirectory, { recursive: true, force: true });
     }

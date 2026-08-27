@@ -11,13 +11,15 @@ const TimeoutSecondsSchema = z.number().int().positive().max(180);
 export function buildBoundedNpmCiCommand(
   aggregateTimeoutSeconds = 80,
   attemptTimeoutSeconds = 35,
+  killAfterSeconds = 2,
 ): string {
   const aggregateTimeout = TimeoutSecondsSchema.parse(aggregateTimeoutSeconds);
   const attemptTimeout = TimeoutSecondsSchema.parse(attemptTimeoutSeconds);
-  if (attemptTimeout * 2 >= aggregateTimeout) {
+  const killAfter = TimeoutSecondsSchema.parse(killAfterSeconds);
+  if ((attemptTimeout + killAfter) * 2 >= aggregateTimeout) {
     throw new Error("Aggregate npm timeout must leave time for two attempts and cleanup");
   }
-  return `timeout ${aggregateTimeout}s sh -c 'for attempt in 1 2; do timeout ${attemptTimeout}s npm ci --include=dev --no-audit --no-fund --loglevel warn --fetch-retries 2 --fetch-retry-mintimeout 1000 --fetch-retry-maxtimeout 5000 --fetch-timeout 20000 && exit 0; rm -rf node_modules; done; exit 1'`;
+  return `timeout --kill-after=${killAfter}s ${aggregateTimeout}s sh -c 'for attempt in 1 2; do timeout --kill-after=${killAfter}s ${attemptTimeout}s npm ci --include=dev --no-audit --no-fund --loglevel warn --fetch-retries 2 --fetch-retry-mintimeout 1000 --fetch-retry-maxtimeout 5000 --fetch-timeout 20000 && exit 0; rm -rf node_modules; done; exit 1'`;
 }
 
 export function buildTrueForgeDaytonaEvidenceCommand(
