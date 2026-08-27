@@ -93,6 +93,7 @@ External gates are rerun separately because they require provider credentials:
 | Three persisted dynamic subagent threads | Complete; three read-only child threads created in parallel and joined successfully |
 | Disconnect during a running turn and same-turn reconnect | Complete; live subscription resumed the same session/turn from cursor 5 to 11 |
 | Release documentation, final CI, and release tag | Complete at `v0.1.1-hackathon` after the root README evidence fix merges |
+| Public blog post | Complete in [BLOG.md](BLOG.md) after the write-up PR merges |
 | Final public video and official submission form | Operator-owned and pending |
 
 ## Claims Checklist

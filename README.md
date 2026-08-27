@@ -17,6 +17,8 @@ sandbox, parallel dynamic subagents, running-turn reconnect, and native denial/a
 operator-owned video and official submission steps remain, as tracked in
 [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
+Hackathon write-up: [Projection Witness: Approval For One Proven Repair](docs/BLOG.md).
+
 ## Qodo Code Review Evidence
 
 Representative substantive merge: [PR #11, retryable and bounded exact-commit Daytona
