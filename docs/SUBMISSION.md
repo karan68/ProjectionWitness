@@ -88,6 +88,26 @@ External gates are rerun separately because they require provider credentials:
 - State external provider failures plainly and never substitute local shell output.
 - Do not claim whole-projection rebuild, arbitrary frameworks, or automatic repair.
 
+## Public Collision Refresh
+
+Checked on 2026-08-27 with GitHub repository searches for TrueForge plus projection repair,
+event sourcing, and PostgreSQL repair. No direct repository match claimed reducer-derived,
+evidence-bound repair of one event-sourced PostgreSQL projection row.
+
+Adjacent public entrants inspected:
+
+- `ss-pratapIIITB/DoneCornerAI`: CFO close-pack ingestion/dashboard with approval-gated org
+   publishing.
+- `SamipSGz/changesafe` (`License to Act`): approval-gated email, support-ticket, and calendar
+   actions backed by local JSON audit data.
+- `prakarshpathak/holdline`: staged incident diagnosis and approval-gated rollback experience.
+
+Approval gates, audit trails, sandbox use, and incident workflows are shared themes. Projection
+Witness differentiates narrowly on immutable event history, exact deployed reducer identity,
+candidate derivation outside the model, approval bound to stream/runtime/row hashes, and atomic
+stale-plan refusal with one-row PostgreSQL CAS plus append-only audit. Do not describe the adjacent
+projects as inferior or claim generic novelty beyond this mechanism.
+
 ## Operator-Owned Final Steps
 
 These cannot be completed safely by an automated coding agent:
