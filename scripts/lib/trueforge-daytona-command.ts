@@ -31,9 +31,5 @@ export function buildTrueForgeDaytonaEvidenceCommand(
 ): string {
   const commitSha = CommitShaSchema.parse(commitShaInput);
   const reducerSha256 = Sha256Schema.parse(reducerSha256Input);
-  return `set -euo pipefail
-script=/tmp/${DaytonaEvidenceScriptName}
-timeout --kill-after=2s 12s curl --fail --show-error --location --retry 5 --retry-all-errors --connect-timeout 6 --max-time 6 --retry-max-time 10 --output "$script" 'https://raw.githubusercontent.com/karan68/ProjectionWitness/${commitSha}/scripts/${DaytonaEvidenceScriptName}'
-printf '%s  %s\n' '${DaytonaEvidenceScriptSha256}' "$script" | sha256sum -c -
-sh "$script" '${commitSha}' '${reducerSha256}'`;
+  return `set -euo pipefail; script=/tmp/${DaytonaEvidenceScriptName}; timeout --kill-after=2s 12s curl --fail --show-error --location --retry 5 --retry-all-errors --connect-timeout 6 --max-time 6 --retry-max-time 10 --output "$script" 'https://raw.githubusercontent.com/karan68/ProjectionWitness/${commitSha}/scripts/${DaytonaEvidenceScriptName}'; echo '${DaytonaEvidenceScriptSha256}  /tmp/${DaytonaEvidenceScriptName}' | sha256sum -c -; sh "$script" '${commitSha}' '${reducerSha256}'`;
 }

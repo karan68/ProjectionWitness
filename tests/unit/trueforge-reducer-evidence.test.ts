@@ -110,6 +110,7 @@ describe("TrueForge reducer evidence verification", () => {
     expect(built).toContain("d".repeat(40));
     expect(built).toContain("e".repeat(64));
     expect(built).not.toContain("npm ci");
+    expect(built).not.toContain("\n");
     expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
     expect(DaytonaNodeArchiveSha256).toBe(
       "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
