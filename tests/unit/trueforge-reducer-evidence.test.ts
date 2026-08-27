@@ -101,6 +101,7 @@ describe("TrueForge reducer evidence verification", () => {
       new URL("../../scripts/daytona-reducer-evidence.sh", import.meta.url),
     );
     const evidenceScript = evidenceScriptBytes.toString("utf8");
+    expect(evidenceScript).toContain("npm ci --include=dev --ignore-scripts");
     expect(createHash("sha256").update(evidenceScriptBytes).digest("hex")).toBe(
       DaytonaEvidenceScriptSha256,
     );
@@ -111,6 +112,8 @@ describe("TrueForge reducer evidence verification", () => {
     expect(built).toContain("e".repeat(64));
     expect(built).not.toContain("npm ci");
     expect(built).not.toContain("\n");
+    expect(built).toContain('timeout --kill-after=5s 155s sh "$script"');
+    expect(built).toContain('rm -rf "$work" "$script"; exit "$status"');
     expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
     expect(DaytonaNodeArchiveSha256).toBe(
       "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",

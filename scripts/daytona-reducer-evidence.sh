@@ -36,7 +36,7 @@ timeout --kill-after=2s 12s curl --fail --show-error --location --retry 5 --retr
   "https://codeload.github.com/karan68/ProjectionWitness/tar.gz/$commit_sha"
 tar -xzf source.tar.gz
 cd "ProjectionWitness-$commit_sha"
-timeout --kill-after=2s 75s sh -c 'for attempt in 1 2; do timeout --kill-after=2s 32s npm ci --include=dev --no-audit --no-fund --loglevel warn --fetch-retries 2 --fetch-retry-mintimeout 1000 --fetch-retry-maxtimeout 5000 --fetch-timeout 20000 && exit 0; rm -rf node_modules; done; exit 1'
+timeout --kill-after=2s 75s sh -c 'for attempt in 1 2; do timeout --kill-after=2s 32s npm ci --include=dev --ignore-scripts --no-audit --no-fund --loglevel warn --fetch-retries 2 --fetch-retry-mintimeout 1000 --fetch-retry-maxtimeout 5000 --fetch-timeout 20000 && exit 0; rm -rf node_modules; done; exit 1'
 printf '%s\n' 'stage=repository-install-ok'
 
 timeout --kill-after=2s 8s npm run --silent build:reducer
