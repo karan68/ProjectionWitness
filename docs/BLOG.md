@@ -28,10 +28,10 @@ hash, reducer generation and digest, current row version and hash, candidate has
 expiry.
 
 The only destructive MCP tool is `apply_projection_repair`. TrueForge pauses that literal call for
-native human approval. PostgreSQL then acquires the same stream, runtime, and row locks used by the
-owning write paths, recomputes the evidence, performs a one-row compare-and-swap, and appends an
-audit receipt in the same transaction. A mismatch returns `STALE_PLAN`; an audit failure rolls back
-the row update.
+native human approval. PostgreSQL then acquires locks in the fixed global order: repair plan,
+runtime manifest, stream head, and projection row. It recomputes the evidence, performs a one-row
+compare-and-swap, and appends an audit receipt in the same transaction. A mismatch returns
+`STALE_PLAN`; an audit failure rolls back the row update.
 
 ## Why TrueForge Is Central
 
