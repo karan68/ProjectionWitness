@@ -6,6 +6,8 @@ const MaximumToolArgumentsBytes = 131_072;
 const MaximumToolResponseBytes = 2_097_152;
 const MaximumCommandBytes = 65_536;
 const MaximumResultBytes = 1_048_576;
+const MaximumBaseUrlBytes = 2_048;
+const EventListingDeadlineMsSchema = z.number().int().positive().max(120_000);
 
 const ToolCallSchema = z
   .object({
@@ -78,6 +80,50 @@ export async function collectPersistedSessionEvents(
     events.push(item.event);
   }
   return events;
+}
+
+export function parseLoopbackTrueForgeBaseUrl(input: string): string {
+  const value = z.string().trim().min(1).max(MaximumBaseUrlBytes).parse(input);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("TRUEFORGE_BASE_URL must be a valid URL");
+  }
+  if (!new Set(["http:", "https:"]).has(url.protocol)) {
+    throw new Error("TRUEFORGE_BASE_URL must use http or https");
+  }
+  if (!new Set(["127.0.0.1", "localhost", "[::1]"]).has(url.hostname)) {
+    throw new Error("TRUEFORGE_BASE_URL must use a loopback host");
+  }
+  if (
+    url.username !== "" ||
+    url.password !== "" ||
+    (url.pathname !== "" && url.pathname !== "/") ||
+    url.search !== "" ||
+    url.hash !== ""
+  ) {
+    throw new Error("TRUEFORGE_BASE_URL must contain only a loopback origin");
+  }
+  return url.origin;
+}
+
+export async function collectPersistedSessionEventsWithinDeadline(
+  load: (signal: AbortSignal) => Promise<AsyncIterable<{ event: unknown }>>,
+  deadlineMsInput = 30_000,
+): Promise<unknown[]> {
+  const deadlineMs = EventListingDeadlineMsSchema.parse(deadlineMsInput);
+  const controller = new AbortController();
+  const timeout = setTimeout(
+    () => controller.abort(new Error("TrueForge event listing exceeded its aggregate deadline")),
+    deadlineMs,
+  );
+  timeout.unref();
+  try {
+    return await collectPersistedSessionEvents(await load(controller.signal));
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 export function verifyTrueForgeReducerEvidence(
