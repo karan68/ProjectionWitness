@@ -3,6 +3,7 @@ set -eu
 
 commit_sha="${1:-}"
 reducer_sha256="${2:-}"
+work="${3:-}"
 case "$commit_sha" in
   *[!0-9a-f]*|'') exit 2 ;;
 esac
@@ -11,10 +12,12 @@ case "$reducer_sha256" in
 esac
 test "${#commit_sha}" -eq 40
 test "${#reducer_sha256}" -eq 64
+case "$work" in
+  /tmp/projection-witness-launcher.[0-9]*/work) ;;
+  *) exit 2 ;;
+esac
 
-work=/tmp/projection-witness-evidence
 node_archive=node-v22.23.2-linux-x64.tar.gz
-rm -rf "$work"
 mkdir -p "$work"
 cd "$work"
 

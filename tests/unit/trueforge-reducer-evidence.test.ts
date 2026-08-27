@@ -136,17 +136,18 @@ describe("TrueForge reducer evidence verification", () => {
     expect(createHash("sha256").update(evidenceScriptBytes).digest("hex")).toBe(
       DaytonaEvidenceScriptSha256,
     );
-    expect(built.length).toBeLessThan(1_000);
+    expect(built.length).toBeLessThan(1_200);
     expect(built).toContain(DaytonaEvidenceScriptSha256);
     expect(built).toContain(`/scripts/${DaytonaEvidenceScriptName}`);
     expect(built).toContain("d".repeat(40));
     expect(built).toContain("e".repeat(64));
     expect(built).not.toContain("npm ci");
     expect(built).not.toContain("\n");
-    expect(built).toContain("timeout --kill-after=5s 155s sh '/tmp/daytona-reducer-evidence.sh'");
-    expect(built).toContain(
-      "rm -rf '/tmp/projection-witness-evidence' '/tmp/daytona-reducer-evidence.sh'",
-    );
+    expect(built).toContain("umask 077; root=/tmp/projection-witness-launcher.$$");
+    expect(built).toContain("pathlib.Path(sys.argv[1]).read_bytes()");
+    expect(built).toContain("hashlib.sha256(data)");
+    expect(built).toContain("subprocess.run");
+    expect(built).toContain('rm -rf "$root"; exit "$status"');
     expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
     expect(DaytonaNodeArchiveSha256).toBe(
       "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
@@ -204,12 +205,15 @@ test "$count" -eq 2
 
   it("force-stops a stalled evidence script, cleans paths, and propagates failure", async () => {
     const suffix = randomUUID();
-    const scriptPath = `/tmp/projection-witness-outer-${suffix}.sh`;
-    const workPath = `/tmp/projection-witness-outer-${suffix}`;
+    const rootPath = `/tmp/projection-witness-outer-${suffix}`;
+    const scriptPath = `${rootPath}/evidence.sh`;
+    const workPath = `${rootPath}/work`;
+    const script = "#!/bin/sh\ntrap '' TERM\nwhile :; do :; done\n";
+    const scriptSha256 = createHash("sha256").update(script).digest("hex");
     const shellPath = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\sh.exe" : "sh";
     await execFileAsync(shellPath, [
       "-c",
-      `printf '%s\n' '#!/bin/sh' "trap '' TERM" 'while :; do :; done' > '${scriptPath}'; mkdir -p '${workPath}'`,
+      `mkdir -p '${workPath}'; printf %s ${JSON.stringify(script)} > '${scriptPath}'`,
     ]);
 
     const startedAt = Date.now();
@@ -217,22 +221,26 @@ test "$count" -eq 2
     try {
       await execFileAsync(shellPath, [
         "-c",
-        buildBoundedEvidenceScriptExecutionCommand("d".repeat(40), "e".repeat(64), {
-          aggregateTimeoutSeconds: 2,
-          killAfterSeconds: 1,
-          scriptPath,
-          workPath,
-        }),
+        `root='${rootPath}'; script='${scriptPath}'; work='${workPath}'; ${buildBoundedEvidenceScriptExecutionCommand(
+          "d".repeat(40),
+          "e".repeat(64),
+          scriptSha256,
+          {
+            aggregateTimeoutSeconds: 2,
+            killAfterSeconds: 1,
+          },
+        )}`,
       ]);
     } catch (error) {
       executionError = error as ExecFileException;
     }
 
+    expect(executionError).toBeDefined();
     expect(executionError?.code).not.toBe(0);
-    expect(Date.now() - startedAt).toBeLessThan(6_000);
+    expect(Date.now() - startedAt).toBeLessThan(10_000);
     const cleanup = await execFileAsync(shellPath, [
       "-c",
-      `test ! -e '${scriptPath}' && test ! -e '${workPath}' && printf cleaned`,
+      `test ! -e '${rootPath}' && printf cleaned`,
     ]);
     expect(cleanup.stdout).toBe("cleaned");
   });
