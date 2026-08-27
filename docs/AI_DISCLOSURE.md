@@ -14,6 +14,9 @@ code, tests, claims, and demo remain the entrant's responsibility.
 - TrueForge ran the submitted Projection Witness agent, MCP tools, dynamic-agent/sandbox
   capabilities, native approval flow, persisted sessions, and reconnect path.
 - Google Gemini models configured in TrueForge selected tools and produced investigation text.
+- After Gemini free-tier exhaustion, local Ollama `qwen3:8b` selected tools for the final Daytona
+  and dynamic-subagent evidence through a temporary OpenAI-compatible streaming adapter. Persisted
+  events, executable verifiers, and database state, not model prose, determined acceptance.
 
 ## Human Verification
 

@@ -26,6 +26,8 @@ configuration alone are not represented as review evidence.
 | [7](https://github.com/karan68/ProjectionWitness/pull/7) | Role-separated MCP connectors | Review found cross-order verification and mixed PostgreSQL statement snapshots | Accepted and fixed through `e2da192`; merged as `4734413` |
 | [8](https://github.com/karan68/ProjectionWitness/pull/8) | Approval-gated TrueForge saved agent | Review found approval verification parsing unrelated parallel sibling calls as apply calls | Accepted and fixed on the reviewed stack before merge |
 | [9](https://github.com/karan68/ProjectionWitness/pull/9) | Approval-bound end-to-end demo | Review found synthetic reconnect cursors and alleged first-page-only approval history | Cursor accepted and fixed with real SSE IDs; pagination finding disproved against pinned SDK automatic page iteration and a 101-event regression |
+| [10](https://github.com/karan68/ProjectionWitness/pull/10) | Reliability, clean-clone, and submission hardening | Findings covered release-gate behavior and documentation consistency | Accepted findings fixed before merge; exact-head CI and persistent review passed |
+| [11](https://github.com/karan68/ProjectionWitness/pull/11) | Retryable, bounded exact-commit Daytona evidence | Review found retry, hard-timeout, event-listing, pathname TOCTOU, path validation, complete-launcher budget, cleanup, and focused-test gaps | Accepted and fixed through reviewed head `56f9770`; final review reported zero bugs and zero rule violations; merged as `7c3732d` |
 
 ### PR 1 findings
 

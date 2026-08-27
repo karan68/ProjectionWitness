@@ -1,6 +1,6 @@
 # Canonical Evidence And Reducer Provenance
 
-Last verified: 2026-08-26
+Last verified: 2026-08-28
 
 ## Canonicalization
 
@@ -44,8 +44,8 @@ with only `evidenceSha256` omitted. The fixed project vector is:
 c45752e3a38ef7656eb121e5aa5b1aff5412b5645ed91408ea0a07df6c1366c7
 ```
 
-This PR does not persist a repair plan or authorize a write. Plan immutability, transactional apply,
-and stale-state rechecks belong to the next safety PR.
+Plan staging and transactional apply consume this envelope without accepting a caller-authored
+candidate. Their lock, compare-and-swap, and audit contracts are documented separately.
 
 ## Reducer Artifact
 
@@ -106,35 +106,39 @@ schema-valid final JSON result matching the fixed stream, candidate, and reducer
 or arbitrary substrings cannot satisfy the verifier. Event count and every persisted text field are
 bounded before JSON parsing.
 
-The exact reducer run is not yet claimed as successful in Daytona. Persisted attempts include:
+The exact merge-commit reducer run is successful and accepted by the strict persisted-event
+verifier:
 
-- Flash session `01m0wdmwq3kw0add7ch5ekxd2y` remained in model dispatch before
-  `sandbox.created` and was cancelled.
-- Pro session `01m0wdwe0mt1gtcwf7c3nwcbv4` ended before `sandbox.created` with Gemini HTTP 429;
-  the provider reported both free-tier request and input-token limits as `0`.
-- Flash session `01m11s6zv0zn7sh6twxmvs69zr` reached one exact `exec` call but Daytona creation
-  exceeded the provider's original 60-second timeout.
-- Flash session `01m11t4jaywdbxee6cnj0s1234` created a real Daytona sandbox, verified the
-  Node `.tar.xz` archive against its official `d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307`
-  digest, and then failed because the image did not include `xz`. The persisted tool response says
-  `node-v22.23.2-linux-x64.tar.xz: OK` before `xz: Cannot exec`.
-- Flash session `01m11t86y3dmhzhy8zhpaj8kah` created a real Daytona sandbox and exposed that
-  production dependency mode omitted the locked `tsx` and `esbuild` build tools.
-- Flash session `01m11tga8phxzqjejfdxxj49eb` created real Daytona sandbox
-  `v1:daytona:default.a7a0aef6-1f79-4459-a239-7da408851e79`. The corrected dev-dependency command
-  completed the Node and npm bootstrap but exited before the repository-install marker, consistent
-  with a transient source download failure.
-- Flash session `01m11tprbhtwy98xfcz1wg3rba` uses the corrected checksum, gzip extraction,
-  bounded network retries, and explicit dev-dependency install. Its terminal evidence must pass
-  the strict verifier before success is claimed; the current attempt ended at model quota before
-  dispatching the corrected command.
+- Public commit: `7c3732db5394eab931bd99cbdb9bca6a3a98c142`.
+- TrueForge session: `01m1285jm6s9xxxjqhqexxzqp6`.
+- Turn: `01m1285jmm5kq6ypqrpz870zg5.local`.
+- Daytona sandbox: `v1:daytona:default.126a924-a948-467e-92ab-0ec4da122eed`.
+- Exact `exec` call: `call_d6gzk9y0`.
+- Downloaded script SHA-256:
+  `619fab9f4375c84b402c52b21597aeafcd3d414e942f7dca347cf6f53ca7f3ab`.
+- Reducer SHA-256:
+  `4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637`.
+- Stream SHA-256: `e574755a41608e81eca0cc7bc33412c96d35f39be51d30fd4f77ff963e5fe903`.
+- Candidate SHA-256: `9c586ffed5924a0d8d5b7a517a633f0c264e6212b4fb995e00886cf102850fb2`.
+- Tool exit code: `0`; turn status: `done`; deterministic double replay: `true`.
 
-The Daytona provider remained `ready`. Its documented `exec_timeout_ms` was increased from 60000
-to 180000 after session `01m11s6zv0zn7sh6twxmvs69zr` proved the original creation timeout was too
-short. The dedicated evidence agent was moved from zero-quota Pro to Flash and given an 8192-token
-output cap after `max_tokens breached`. These are local TrueForge settings; no credential or
-provider key is committed.
+The command used a local Ollama `qwen3:8b` model through a temporary OpenAI-compatible streaming
+adapter because the configured Gemini free tier was exhausted. Tool execution still occurred in
+the real TrueForge-created Daytona sandbox. The model did not supply evidence acceptance: the
+repository verifier independently required one byte-exact command, one linked zero-exit response,
+one `sandbox.created`, a successful terminal turn, and the complete known-answer JSON.
 
-Earlier failed attempts do not count as reducer proof. The infrastructure smoke and later attempts
-prove real Daytona creation and checksum-pinned Node execution, but only a persisted single-call,
-zero-exit result accepted by `verifyTrueForgeReducerEvidence` closes the exact-reducer gate.
+Rerun that independent check while the local TrueForge store is available:
+
+```powershell
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run trueforge:verify-daytona -- `
+  01m1285jm6s9xxxjqhqexxzqp6 `
+  7c3732db5394eab931bd99cbdb9bca6a3a98c142 `
+  4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637
+```
+
+Earlier failed sessions remain in the persisted TrueForge store and are not counted as proof. They
+exposed provider quota, executor timeout, missing `xz`, omitted development dependencies, and
+transient install failures; PR #11 converted those observations into bounded retries, hard
+TERM/KILL deadlines, same-byte hash/execution, complete event-listing deadlines, and cleanup on
+every launcher exit.
