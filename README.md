@@ -9,8 +9,11 @@ approved candidate is still safe to apply.
 
 ## Current status
 
-Foundation work is in progress. No repair workflow is claimed as implemented until the executable
-gates in [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) pass.
+The complete one-row workflow is implemented and merged: genuine gap reproduction, safe runtime
+attestation, reducer-derived evidence, immutable plan staging, native TrueForge denial and allow,
+transactional apply, append-only audit, and independent API/database verification. The local and
+CI gates pass; current external-provider evidence and operator-owned submission steps are tracked
+in [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
 ## Prerequisites
 
@@ -78,9 +81,9 @@ permanent-hole retirement policy, runtime refusal contract, startup command, and
 
 The evidence package implements RFC 8785 canonicalization, SHA-256 stream/row/runtime/candidate
 fingerprints, deterministic double replay, a self-derived repair envelope, and an exact reducer
-artifact runner. The PostgreSQL role-split path and local artifact known answers pass. The real
-exact-reducer Daytona run is currently blocked before sandbox creation by model quota and is not
-claimed as complete.
+artifact runner. The PostgreSQL role-split path and local artifact known answers pass. TrueForge
+has created real Daytona sandboxes for the saved skill and exact-reducer attempts; the final exact
+reducer run remains separately evidence-gated and is never inferred from local execution.
 
 See [docs/EVIDENCE.md](docs/EVIDENCE.md) for the trust boundary, known hashes, executable commands,
 and persisted TrueForge attempt status.
@@ -104,8 +107,8 @@ The write-facing database credential can stage immutable plans but cannot mutate
 apply runs through the internal executor identity.
 
 See [docs/MCP_CONNECTORS.md](docs/MCP_CONNECTORS.md) for the exact tool surfaces, database roles,
-limits, startup command, and official-client smoke test. Native TrueForge approval wiring remains
-follow-up work. The checked-in TrueForge manifest, projection repair sandbox skill, idempotent
+limits, startup command, and official-client smoke test. The checked-in TrueForge manifest,
+projection repair sandbox skill, idempotent
 registration client, approval-event verifier, and sequence-based reconnect client are documented
 in [docs/TRUEFORGE.md](docs/TRUEFORGE.md); deterministic contract tests, real registration, a
 read-tool turn, completed-turn reconnect, native denial, and native allow now pass at exact public
@@ -149,9 +152,12 @@ The reset command refuses `NODE_ENV=production` and requires the exact confirmat
 - No write when stream, runtime, row, candidate, plan, or expiry evidence is stale.
 
 See [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) for the complete contract and
+[docs/SECURITY.md](docs/SECURITY.md) for trust boundaries and residual risk,
 [docs/VERSIONS.md](docs/VERSIONS.md) for verified pins,
 [docs/TRUEFORGE.md](docs/TRUEFORGE.md) for the tested harness path, and
-[docs/QODO_EVIDENCE.md](docs/QODO_EVIDENCE.md) for review history.
+[docs/QODO_EVIDENCE.md](docs/QODO_EVIDENCE.md) for review history. Submission narration and
+operator steps are in [docs/SUBMISSION.md](docs/SUBMISSION.md); AI assistance and human
+verification are disclosed in [docs/AI_DISCLOSURE.md](docs/AI_DISCLOSURE.md).
 
 ## License
 
