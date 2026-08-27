@@ -87,6 +87,16 @@ The reconnect path has no create-turn method and cannot silently replace the ori
 The saved-agent manifest, registration behavior, approval binding, atomic checkpoint, and both
 reconnect branches are covered by deterministic unit tests.
 
+No persisted non-root subagent thread exists in the current local store. Three real parallel
+subagent threads and a disconnect while the turn is still running remain external release gates;
+they are not replaced by deterministic contract tests.
+
+The dedicated sandbox-only evidence agent now uses `google-gemini/gemini-3-6-flash`, an 8192-token
+output cap, minimal reasoning, no MCP servers, no subagents, and no approval surface. The Daytona
+provider remains ready with a 180000 ms execution timeout. Exact-reducer attempts are accepted
+only by the strict persisted-event verifier; sandbox creation or partial command output alone is
+not represented as success.
+
 ### Real saved-agent read and reconnect evidence
 
 On 2026-08-25, TrueForge `0.1.4` and the MCP connectors ran together on WSL loopback from public
@@ -133,8 +143,9 @@ The first command exposed that the TrueForge Daytona image does not contain Node
 It contains Python `3.13.15` and standard download/extraction tools. A follow-up turn therefore:
 
 1. Downloaded the official Node `22.23.2` Linux x64 archive inside Daytona.
-2. Verified SHA-256
-   `b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a` before extraction.
+2. Verified the `.tar.gz` SHA-256
+  `b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a` before extraction. The
+  gzip archive is required because the Daytona base image does not include `xz`.
 3. Executed Node `v22.23.2` and a deterministic SHA-256 workload.
 4. Returned exit code `0` through TrueForge's persisted tool response.
 

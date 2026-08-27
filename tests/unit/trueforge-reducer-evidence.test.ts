@@ -2,6 +2,11 @@ import {
   collectPersistedSessionEvents,
   verifyTrueForgeReducerEvidence,
 } from "../../scripts/lib/verify-trueforge-reducer-evidence.js";
+import {
+  buildTrueForgeDaytonaEvidenceCommand,
+  DaytonaNodeArchiveName,
+  DaytonaNodeArchiveSha256,
+} from "../../scripts/lib/trueforge-daytona-command.js";
 import { describe, expect, it } from "vitest";
 
 const command = "printf exact-command";
@@ -79,6 +84,21 @@ function persistedEvents(overrides?: {
 }
 
 describe("TrueForge reducer evidence verification", () => {
+  it("binds the official tar.gz archive to its matching SHA-256", () => {
+    const built = buildTrueForgeDaytonaEvidenceCommand("d".repeat(40), "e".repeat(64));
+    expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
+    expect(DaytonaNodeArchiveSha256).toBe(
+      "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
+    );
+    expect(built).toContain(`${DaytonaNodeArchiveSha256}' '${DaytonaNodeArchiveName}`);
+    expect(built).toContain(`tar -xzf ${DaytonaNodeArchiveName}`);
+    expect(built).toContain("npm ci --include=dev --no-audit --no-fund --silent");
+    expect(built).toContain("--retry 5 --retry-all-errors --connect-timeout 30");
+    expect(built).toContain("https://codeload.github.com/karan68/ProjectionWitness/tar.gz/");
+    expect(built).toContain("stage=node-bootstrap-ok");
+    expect(built).toContain("stage=reducer-digest-ok");
+  });
+
   it("accepts one exact successful exec result", () => {
     expect(verifyTrueForgeReducerEvidence(persistedEvents(), expected)).toEqual(result);
   });

@@ -1,6 +1,6 @@
 # Verified Versions
 
-Last verified: 2026-08-25
+Last verified: 2026-08-27
 
 ## Runtime and infrastructure
 
@@ -16,7 +16,7 @@ Last verified: 2026-08-25
 | TrueForge smoke model | `google-gemini/gemini-3-6-flash` | Saved agent completed real sandbox turns |
 | Daytona provider | `ready` on 2026-08-25 | Redacted TrueForge settings API and `sandbox.created` event |
 | Daytona Node bootstrap | `22.23.2` | Official Linux x64 archive hash verified before execution |
-| Daytona Node archive | `sha256:b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a` | Matched official Node.js `SHASUMS256.txt` |
+| Daytona Node `.tar.gz` archive | `sha256:b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a` | Matched official Node.js `SHASUMS256.txt`; gzip chosen because the Daytona base image does not include `xz` |
 | Docker Engine | `29.6.2` | WSL client and server both verified |
 | Docker Compose | `5.3.1` | WSL Compose plugin verified |
 | PostgreSQL image | `postgres:18.6-bookworm` | Docker Official Image tag verified |
@@ -45,12 +45,12 @@ was verified with `POSTGRES_PORT=55432`. CI retains the contract default `5432`.
 
 `package-lock.json` is the transitive dependency authority.
 
-## Remaining verification
+## Submission identities
 
-The following values remain intentionally unset until their producing implementation exists:
-
-- Reducer artifact digest and source commit SHA.
-- Final saved-agent model FQN after deterministic agent evaluation. The smoke model above is not
-	yet represented as the submission model.
-
-These are implementation gates. They must not be replaced with mocked evidence.
+- Approved reducer artifact SHA-256:
+	`4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637`.
+- Merged end-to-end baseline commit:
+	`2e45ccb08fe232b3b657e83896ce5219aa9fde49`.
+- Saved Projection Witness model: `google-gemini/gemini-3-6-flash`.
+- Final submission commit remains the release-candidate tag target and must be recorded after the
+	hardening PR merges.
