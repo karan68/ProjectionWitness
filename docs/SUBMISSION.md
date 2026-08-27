@@ -92,7 +92,7 @@ External gates are rerun separately because they require provider credentials:
 | Exact reducer execution accepted by strict Daytona verifier | Complete at merge commit `7c3732d`; exact session, sandbox, and hashes recorded |
 | Three persisted dynamic subagent threads | Complete; three read-only child threads created in parallel and joined successfully |
 | Disconnect during a running turn and same-turn reconnect | Complete; live subscription resumed the same session/turn from cursor 5 to 11 |
-| Release documentation, final CI, and release tag | Complete at `v0.1.0-hackathon` after this documentation change merges |
+| Release documentation, final CI, and release tag | Complete at `v0.1.1-hackathon` after the root README evidence fix merges |
 | Final public video and official submission form | Operator-owned and pending |
 
 ## Claims Checklist
