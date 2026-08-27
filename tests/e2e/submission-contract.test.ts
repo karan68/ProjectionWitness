@@ -77,6 +77,17 @@ describe("submission contract", () => {
     const security = await text("docs/SECURITY.md");
     const disclosure = await text("docs/AI_DISCLOSURE.md");
     expect(readme).toContain("exactly one");
+    for (const environmentName of [
+      "DATABASE_URL_MIGRATOR",
+      "DATABASE_URL_API",
+      "DATABASE_URL_PROJECTOR",
+      "DATABASE_URL_MCP_READ",
+      "DATABASE_URL_MCP_WRITE",
+      "DATABASE_URL_REPAIR_EXECUTOR",
+    ]) {
+      expect(readme).toContain(environmentName);
+    }
+    expect(readme).toContain("run dev:mcp");
     expect(security).toContain("not a general database agent");
     expect(security).toContain("Standalone TrueForge local mode has no login boundary");
     expect(disclosure).toContain("The language model never supplies the repair candidate");

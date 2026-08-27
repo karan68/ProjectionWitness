@@ -29,11 +29,17 @@ in [docs/SUBMISSION.md](docs/SUBMISSION.md).
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:down
 ```
 
-Set `DATABASE_URL_MIGRATOR` to the local migration-owner connection before applying ordered
-migrations:
+Set the migration owner and all five least-privilege runtime identities before applying migrations
+and provisioning login passwords. The example passwords are local-only placeholders and must
+match the values used to create the disposable database:
 
 ```powershell
 $env:DATABASE_URL_MIGRATOR = "postgresql://pw_migrator:<local-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_API = "postgresql://pw_api:<local-api-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_PROJECTOR = "postgresql://pw_projector:<local-projector-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_MCP_READ = "postgresql://pw_mcp_read:<local-read-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_MCP_WRITE = "postgresql://pw_mcp_write:<local-stage-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_REPAIR_EXECUTOR = "postgresql://pw_repair_executor:<local-executor-password>@127.0.0.1:55432/projection_witness"
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:migrate
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:bootstrap-roles
 ```
@@ -123,6 +129,29 @@ independent verifier agree that the database and public API are `PAID`.
 
 See [docs/DEMO.md](docs/DEMO.md) for commands, hashes, persisted TrueForge IDs, zero-mutation denial
 evidence, native allow, audit receipt, and post-write verification.
+
+## End-to-end local run
+
+Keep PostgreSQL running, then start the public API and both MCP connectors in separate terminals:
+
+```powershell
+$env:POSTGRES_PORT = "55432"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:serve
+
+$env:API_PORT = "3000"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run dev:api
+
+$env:API_BASE_URL = "http://127.0.0.1:3000"
+$env:REDUCER_BUNDLE_PATH = ".\artifacts\order-reducer.4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637.cjs"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run build:reducer
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run dev:mcp
+```
+
+Run TrueForge `0.1.4` on WSL loopback using the launch command in
+[docs/TRUEFORGE.md](docs/TRUEFORGE.md). Register the exact public commit after setting
+`TRUEFORGE_MCP_READ_URL` and `TRUEFORGE_MCP_WRITE_URL`, then follow the guarded reset,
+reproduction, preparation, approval, and verification commands in [docs/DEMO.md](docs/DEMO.md).
+TrueForge local mode has no authentication and must remain on localhost.
 
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
