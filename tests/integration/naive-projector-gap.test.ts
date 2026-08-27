@@ -25,9 +25,11 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 }
 
 const databaseUrl = environmentVariable("DATABASE_URL_MIGRATOR") ?? "";
-const describeWithDatabase = databaseUrl === "" ? describe.skip : describe;
+if (databaseUrl === "") {
+  throw new Error("Naive projector gap tests require DATABASE_URL_MIGRATOR");
+}
 
-describeWithDatabase("naive projector out-of-order commit gap", () => {
+describe("naive projector out-of-order commit gap", () => {
   let pool: Pool;
   let eventStore: OrderEventStore;
   let api: FastifyInstance;

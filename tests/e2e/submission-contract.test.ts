@@ -57,6 +57,7 @@ describe("submission contract", () => {
       scripts: Record<string, string>;
     };
     const vitestConfig = await text("vitest.workspace.ts");
+    const databaseEnvironmentGuard = await text("scripts/require-test-database-env.ts");
     expect(vitestConfig).not.toContain("passWithNoTests");
     for (const scriptName of [
       "ci",
@@ -69,6 +70,18 @@ describe("submission contract", () => {
     ]) {
       expect(packageJson.scripts[scriptName]).toBeTruthy();
       expect(packageJson.scripts[scriptName]).not.toContain("passWithNoTests");
+    }
+    expect(packageJson.scripts["test:integration"]).toContain("require-test-database-env.ts");
+    expect(packageJson.scripts["test:race"]).toContain("require-test-database-env.ts");
+    for (const environmentName of [
+      "DATABASE_URL_MIGRATOR",
+      "DATABASE_URL_API",
+      "DATABASE_URL_PROJECTOR",
+      "DATABASE_URL_MCP_READ",
+      "DATABASE_URL_MCP_WRITE",
+      "DATABASE_URL_REPAIR_EXECUTOR",
+    ]) {
+      expect(databaseEnvironmentGuard).toContain(environmentName);
     }
   });
 

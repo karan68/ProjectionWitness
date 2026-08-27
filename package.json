@@ -49,8 +49,8 @@
     "lint": "biome lint .",
     "test": "vitest run --config vitest.workspace.ts",
     "test:e2e": "vitest run --config vitest.workspace.ts tests/e2e",
-    "test:integration": "vitest run --config vitest.workspace.ts tests/integration",
-    "test:race": "vitest run --config vitest.workspace.ts tests/race",
+    "test:integration": "tsx scripts/require-test-database-env.ts integration && vitest run --config vitest.workspace.ts tests/integration",
+    "test:race": "tsx scripts/require-test-database-env.ts race && vitest run --config vitest.workspace.ts tests/race",
     "test:unit": "vitest run --config vitest.workspace.ts tests/unit",
     "typecheck": "tsc --noEmit --pretty false -p tsconfig.typecheck.json"
   },

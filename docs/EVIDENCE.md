@@ -115,7 +115,9 @@ The exact reducer run is not yet claimed as successful in Daytona. Persisted att
 - Flash session `01m11s6zv0zn7sh6twxmvs69zr` reached one exact `exec` call but Daytona creation
   exceeded the provider's original 60-second timeout.
 - Flash session `01m11t4jaywdbxee6cnj0s1234` created a real Daytona sandbox, verified the
-  checksum-pinned Node `.tar.xz` archive, and then failed because the image did not include `xz`.
+  Node `.tar.xz` archive against its official `d60acfe00a2932254bb0ad20e01b0d74397a0875595de719654b214f4b03f307`
+  digest, and then failed because the image did not include `xz`. The persisted tool response says
+  `node-v22.23.2-linux-x64.tar.xz: OK` before `xz: Cannot exec`.
 - Flash session `01m11t86y3dmhzhy8zhpaj8kah` created a real Daytona sandbox and exposed that
   production dependency mode omitted the locked `tsx` and `esbuild` build tools.
 - Flash session `01m11tga8phxzqjejfdxxj49eb` created real Daytona sandbox

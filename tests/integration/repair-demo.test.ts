@@ -16,18 +16,13 @@ const projectorUrl = environmentVariable("DATABASE_URL_PROJECTOR") ?? "";
 const readUrl = environmentVariable("DATABASE_URL_MCP_READ") ?? "";
 const stagingUrl = environmentVariable("DATABASE_URL_MCP_WRITE") ?? "";
 const executorUrl = environmentVariable("DATABASE_URL_REPAIR_EXECUTOR") ?? "";
-const describeWithDatabase = [
-  migratorUrl,
-  apiUrl,
-  projectorUrl,
-  readUrl,
-  stagingUrl,
-  executorUrl,
-].some((value) => value === "")
-  ? describe.skip
-  : describe;
+if (
+  [migratorUrl, apiUrl, projectorUrl, readUrl, stagingUrl, executorUrl].some((url) => url === "")
+) {
+  throw new Error("Repair demo tests require every runtime database URL");
+}
 
-describeWithDatabase("prepared projection repair demo", () => {
+describe("prepared projection repair demo", () => {
   let migratorPool: Pool;
   let apiPool: Pool;
   let projectorPool: Pool;

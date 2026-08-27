@@ -410,7 +410,8 @@ These command names are part of the developer interface and MUST be implemented:
 | `npm run test:unit` | Run isolated deterministic tests |
 | `npm run test:integration` | Run real PostgreSQL integration tests |
 | `npm run test:race` | Run repeated concurrency and stale-plan tests |
-| `npm run test:e2e` | Run credentialed TrueForge/Daytona workflow when enabled |
+| `npm run test:e2e` | Run local submission-contract tests without provider credentials |
+| `npm run evidence:trueforge-daytona -- <commit> <reducer-sha256>` | Run the credentialed exact-reducer workflow in Daytona |
 | `npm run typecheck` | Strict no-emit TypeScript check for all workspaces |
 | `npm run lint` | Lint all owned source |
 | `npm run format:check` | Verify formatting without changing files |
@@ -1410,6 +1411,7 @@ npm run format:check
 npm run lint
 npm run typecheck
 npm run test:unit
+npm run test:e2e
 npm run test:integration
 npm run test:race
 npm run build
@@ -1425,7 +1427,9 @@ CI requirements:
 - Coverage reported, but no arbitrary percentage replaces behavioral gates.
 - Upload useful redacted diagnostics on failure.
 
-The external TrueForge/Daytona test may be a manually triggered workflow because it requires credentials. Its final successful run and logs must be recorded before submission.
+The external `npm run evidence:trueforge-daytona -- <commit> <reducer-sha256>` command is run
+separately because it requires provider credentials. Its final successful run and logs must be
+recorded before submission.
 
 ## 25. Implementation PR Sequence
 

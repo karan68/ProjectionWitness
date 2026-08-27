@@ -18,9 +18,11 @@ function environmentVariable(name: string): string | undefined {
 
 const migratorUrl = environmentVariable("DATABASE_URL_MIGRATOR") ?? "";
 const readUrl = environmentVariable("DATABASE_URL_MCP_READ") ?? "";
-const describeWithDatabase = migratorUrl === "" || readUrl === "" ? describe.skip : describe;
+if (migratorUrl === "" || readUrl === "") {
+  throw new Error("MCP read-tool tests require migrator and read-only database URLs");
+}
 
-describeWithDatabase("MCP read tools", () => {
+describe("MCP read tools", () => {
   let migratorPool: Pool;
   let readPool: Pool;
   let tools: ProjectionWitnessTools;

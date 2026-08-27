@@ -30,9 +30,11 @@ function environmentVariable(name: string): string | undefined {
 
 const migratorUrl = environmentVariable("DATABASE_URL_MIGRATOR") ?? "";
 const projectorUrl = environmentVariable("DATABASE_URL_PROJECTOR") ?? "";
-const describeWithDatabase = migratorUrl === "" || projectorUrl === "" ? describe.skip : describe;
+if (migratorUrl === "" || projectorUrl === "") {
+  throw new Error("Gap-aware projector tests require migrator and projector database URLs");
+}
 
-describeWithDatabase("gap-aware projector and runtime", () => {
+describe("gap-aware projector and runtime", () => {
   let migratorPool: Pool;
   let projectorPool: Pool;
   let eventStore: OrderEventStore;
