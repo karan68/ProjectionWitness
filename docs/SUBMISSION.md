@@ -65,7 +65,7 @@ $env:DATABASE_URL_REPAIR_EXECUTOR = "postgresql://..."
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:migrate
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:bootstrap-roles
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run ci
-+```
+```
 
 Required result: no skipped test directories, all ten repair reliability cases pass, production
 audit has zero high-severity vulnerabilities, reducer digest is unchanged, and required GitHub CI
@@ -74,10 +74,25 @@ is green at the tagged commit.
 External gates are rerun separately because they require provider credentials:
 
 - `npm run evidence:trueforge-daytona -- <commit> <reducer-sha256>` must end in the strict
-   persisted-evidence verifier, not merely `sandbox.created`.
+  persisted-evidence verifier, not merely `sandbox.created`.
 - A saved-agent case must persist three non-root subagent threads.
 - A client must disconnect while a turn is running and reconnect to the same session/turn using
-   the saved server SSE sequence.
+  the saved server SSE sequence.
+
+## Current Gate Status
+
+| Gate | Status on 2026-08-27 |
+|---|---|
+| Public repository, MIT license, PR/Qodo history | Complete |
+| Genuine projector race and stale-plan atomicity | Complete and executable |
+| Native denial, native allow, audit, API verification | Complete with persisted TrueForge IDs |
+| Local release gates and ten-run reliability | Complete |
+| Clean-clone install and submission contract | Complete |
+| Secret-pattern scan of current tree and reachable Git history | Complete; screenshots/video still require manual inspection |
+| Exact reducer execution accepted by strict Daytona verifier | Blocked by external Gemini daily quota; corrected command is ready |
+| Three persisted dynamic subagent threads | Not yet captured; external model run required |
+| Disconnect during a running turn and same-turn reconnect | Not yet captured; external model run required |
+| Final public video and official submission form | Operator-owned and pending |
 
 ## Claims Checklist
 
@@ -97,9 +112,9 @@ evidence-bound repair of one event-sourced PostgreSQL projection row.
 Adjacent public entrants inspected:
 
 - `ss-pratapIIITB/DoneCornerAI`: CFO close-pack ingestion/dashboard with approval-gated org
-   publishing.
+  publishing.
 - `SamipSGz/changesafe` (`License to Act`): approval-gated email, support-ticket, and calendar
-   actions backed by local JSON audit data.
+  actions backed by local JSON audit data.
 - `prakarshpathak/holdline`: staged incident diagnosis and approval-gated rollback experience.
 
 Approval gates, audit trails, sandbox use, and incident workflows are shared themes. Projection
