@@ -16,7 +16,7 @@
   "scripts": {
     "build": "tsc --build && npm run build:reducer",
     "build:reducer": "tsx scripts/build-reducer-bundle.ts",
-    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:unit && npm run test:integration && npm run test:race && npm run build",
+    "ci": "npm run format:check && npm run lint && npm run typecheck && npm run test:unit && npm run test:e2e && npm run test:integration && npm run test:race && npm run build",
     "clean": "tsx scripts/clean.ts",
     "db:bootstrap-roles": "tsx scripts/bootstrap-runtime-roles.ts",
     "db:config": "tsx scripts/docker-compose.ts config",
@@ -47,11 +47,11 @@
     "format": "biome format --write .",
     "format:check": "biome format .",
     "lint": "biome lint .",
-    "test": "vitest run --config vitest.workspace.ts --passWithNoTests",
-    "test:e2e": "vitest run --config vitest.workspace.ts tests/e2e --passWithNoTests",
-    "test:integration": "vitest run --config vitest.workspace.ts tests/integration --passWithNoTests",
-    "test:race": "vitest run --config vitest.workspace.ts tests/race --passWithNoTests",
-    "test:unit": "vitest run --config vitest.workspace.ts tests/unit --passWithNoTests",
+    "test": "vitest run --config vitest.workspace.ts",
+    "test:e2e": "vitest run --config vitest.workspace.ts tests/e2e",
+    "test:integration": "vitest run --config vitest.workspace.ts tests/integration",
+    "test:race": "vitest run --config vitest.workspace.ts tests/race",
+    "test:unit": "vitest run --config vitest.workspace.ts tests/unit",
     "typecheck": "tsc --noEmit --pretty false -p tsconfig.typecheck.json"
   },
   "dependencies": {
