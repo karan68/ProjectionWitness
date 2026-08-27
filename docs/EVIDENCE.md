@@ -114,9 +114,14 @@ The exact reducer run is not yet claimed as successful in Daytona. Persisted att
   the provider reported both free-tier request and input-token limits as `0`.
 - Flash session `01m11s6zv0zn7sh6twxmvs69zr` reached one exact `exec` call but Daytona creation
   exceeded the provider's original 60-second timeout.
+- Flash session `01m11t4jaywdbxee6cnj0s1234` created a real Daytona sandbox, verified the
+  checksum-pinned Node `.tar.xz` archive, and then failed because the image did not include `xz`.
+- Flash session `01m11t86y3dmhzhy8zhpaj8kah` created a real Daytona sandbox and exposed that
+  production dependency mode omitted the locked `tsx` and `esbuild` build tools.
 - Flash session `01m11tga8phxzqjejfdxxj49eb` created real Daytona sandbox
-  `v1:daytona:default.a7a0aef6-1f79-4459-a239-7da408851e79`, verified the official Node gzip
-  archive, and exposed that production dependency mode omitted the locked build toolchain.
+  `v1:daytona:default.a7a0aef6-1f79-4459-a239-7da408851e79`. The corrected dev-dependency command
+  completed the Node and npm bootstrap but exited before the repository-install marker, consistent
+  with a transient source download failure.
 - Flash session `01m11tprbhtwy98xfcz1wg3rba` uses the corrected checksum, gzip extraction,
   bounded network retries, and explicit dev-dependency install. Its terminal evidence must pass
   the strict verifier before success is claimed; the current attempt ended at model quota before
