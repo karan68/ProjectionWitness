@@ -1,6 +1,6 @@
 # Projection Witness Demo
 
-Last verified: 2026-08-25
+Last verified: 2026-08-28
 
 ## What This Proves
 
@@ -152,12 +152,11 @@ That quota error did not affect the already committed transaction or its persist
 
 ## Honest Limitations
 
-- The trusted demo preparation command executed the exact reducer in isolated local workers in
-  the WSL checkout. The approval turn created a real Daytona sandbox for its Git skill, but this
-  run does not claim the reducer itself executed in Daytona.
-- The real reconnect proof currently covers rebuilding a completed turn. Running-turn reconnect
-  uses actual TrueForge SSE IDs and remains a deterministic contract test, not a recorded live
-  demo.
+- The approval turn's reducer preparation used isolated local workers. A separate merge-commit
+  TrueForge session executed and strictly verified the exact reducer in a real Daytona sandbox;
+  the two evidence chains are not conflated.
+- Completed-turn rebuild and live running-turn subscription are both persisted. The running proof
+  resumed the same turn from SSE cursor `5` to `11` without replacement work.
 - The live successful plan was not invoked a second time because a second direct write-tool call
   would require a separate native approval. Stable `ALREADY_APPLIED` receipt reuse remains covered
   by PostgreSQL integration tests.

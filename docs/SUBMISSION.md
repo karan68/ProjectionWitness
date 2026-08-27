@@ -89,9 +89,10 @@ External gates are rerun separately because they require provider credentials:
 | Local release gates and ten-run reliability | Complete |
 | Clean-clone install and submission contract | Complete |
 | Secret-pattern scan of current tree and reachable Git history | Complete; screenshots/video still require manual inspection |
-| Exact reducer execution accepted by strict Daytona verifier | Blocked by external Gemini daily quota; corrected command is ready |
-| Three persisted dynamic subagent threads | Not yet captured; external model run required |
-| Disconnect during a running turn and same-turn reconnect | Not yet captured; external model run required |
+| Exact reducer execution accepted by strict Daytona verifier | Complete at merge commit `7c3732d`; exact session, sandbox, and hashes recorded |
+| Three persisted dynamic subagent threads | Complete; three read-only child threads created in parallel and joined successfully |
+| Disconnect during a running turn and same-turn reconnect | Complete; live subscription resumed the same session/turn from cursor 5 to 11 |
+| Release documentation, final CI, and release tag | Complete at `v0.1.0-hackathon` after this documentation change merges |
 | Final public video and official submission form | Operator-owned and pending |
 
 ## Claims Checklist
@@ -105,7 +106,7 @@ External gates are rerun separately because they require provider credentials:
 
 ## Public Collision Refresh
 
-Checked on 2026-08-27 with GitHub repository searches for TrueForge plus projection repair,
+Checked again on 2026-08-28 with GitHub repository searches for TrueForge plus projection repair,
 event sourcing, and PostgreSQL repair. No direct repository match claimed reducer-derived,
 evidence-bound repair of one event-sourced PostgreSQL projection row.
 
@@ -116,6 +117,12 @@ Adjacent public entrants inspected:
 - `SamipSGz/changesafe` (`License to Act`): approval-gated email, support-ticket, and calendar
   actions backed by local JSON audit data.
 - `prakarshpathak/holdline`: staged incident diagnosis and approval-gated rollback experience.
+- `mohith1306/DataForge`: ClickHouse pipeline/data-quality investigation with approved rerun,
+  backfill, partition reprocessing, and deployment rollback tools.
+- `Redrive-Labs/Redrive`: webhook consumer repair followed by separately approved deployment and
+  provider redelivery, with exactly-once business-effect verification.
+- `rahulsurwade08/patchproof`: CVE reachability, sandbox exploit reproduction, dependency patching,
+  and approval-gated deployment.
 
 Approval gates, audit trails, sandbox use, and incident workflows are shared themes. Projection
 Witness differentiates narrowly on immutable event history, exact deployed reducer identity,

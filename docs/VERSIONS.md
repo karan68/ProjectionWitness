@@ -1,6 +1,6 @@
 # Verified Versions
 
-Last verified: 2026-08-27
+Last verified: 2026-08-28
 
 ## Runtime and infrastructure
 
@@ -14,6 +14,7 @@ Last verified: 2026-08-27
 | TrueForge WSL Node.js | `22.23.2` | Native Linux executable used by the running server |
 | TrueForge server | `0.1.4` | Exact `npx` package; `/healthz` returned HTTP 200 |
 | TrueForge smoke model | `google-gemini/gemini-3-6-flash` | Saved agent completed real sandbox turns |
+| TrueForge evidence fallback | Ollama `qwen3:8b` via `local-ollama/qwen-local` | Selected the exact tool call after Gemini quota exhaustion; strict repository verifier accepted persisted output independently |
 | Daytona provider | `ready` on 2026-08-25 | Redacted TrueForge settings API and `sandbox.created` event |
 | Daytona Node bootstrap | `22.23.2` | Official Linux x64 archive hash verified before execution |
 | Daytona Node `.tar.gz` archive | `sha256:b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a` | Matched official Node.js `SHASUMS256.txt`; gzip chosen because the Daytona base image does not include `xz` |
@@ -52,5 +53,7 @@ was verified with `POSTGRES_PORT=55432`. CI retains the contract default `5432`.
 - Merged end-to-end baseline commit:
 	`2e45ccb08fe232b3b657e83896ce5219aa9fde49`.
 - Saved Projection Witness model: `google-gemini/gemini-3-6-flash`.
-- Final submission commit remains the release-candidate tag target and must be recorded after the
-	hardening PR merges.
+- Reliability merge and accepted Daytona evidence commit:
+	`7c3732db5394eab931bd99cbdb9bca6a3a98c142`.
+- Final submission tag will point to the documentation merge commit; its exact target is recorded
+	in the GitHub release.

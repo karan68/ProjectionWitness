@@ -1,6 +1,6 @@
 # TrueForge Verification
 
-Last verified: 2026-08-25
+Last verified: 2026-08-28
 
 ## Local launch
 
@@ -29,6 +29,8 @@ development only and must not be exposed because this standalone instance has no
 - Model provider: Google Gemini.
 - Verified smoke model FQN: `google-gemini/gemini-3-6-flash`.
 - Also configured: `google-gemini/gemini-3-1-pro-preview`.
+- Quota-independent evidence fallback: local Ollama `qwen3:8b` through a temporary
+  OpenAI-compatible streaming adapter registered as `local-ollama/qwen-local`.
 - Sandbox provider: Daytona, status `ready`.
 
 Provider and model keys were entered directly into TrueForge settings. They are not project
@@ -87,9 +89,9 @@ The reconnect path has no create-turn method and cannot silently replace the ori
 The saved-agent manifest, registration behavior, approval binding, atomic checkpoint, and both
 reconnect branches are covered by deterministic unit tests.
 
-No persisted non-root subagent thread exists in the current local store. Three real parallel
-subagent threads and a disconnect while the turn is still running remain external release gates;
-they are not replaced by deterministic contract tests.
+Persisted non-root subagent threads and a running-turn reconnect now exist in the local store. Their
+exact evidence is recorded below; deterministic contract tests remain separate and are not used as
+substitutes.
 
 The dedicated sandbox-only evidence agent now uses `google-gemini/gemini-3-6-flash`, an 8192-token
 output cap, minimal reasoning, no MCP servers, no subagents, and no approval surface. The Daytona
@@ -114,7 +116,39 @@ The persisted turn contains no approval event, staging call, or write call and e
 After the first client exited, `trueforge:reconnect` used its saved session, turn, and sequence
 cursor `15`. `getTurn` found the turn complete, so the client rebuilt the same six persisted event
 types ending in `turn.done`; it did not create another turn. This is real reconnect evidence for a
-completed turn. A disconnect while the turn is still running remains to be captured separately.
+completed turn. The separate running-turn proof below exercises live subscription from the saved
+cursor.
+
+### Real running-turn reconnect evidence
+
+Session `01m126d8c8vdegbqzf04t9kdzk`, turn
+`01m126d8cse8kw7wpjc7ez8s3b.local` ran one 120-second Daytona command. The first client stopped
+after persisting server SSE cursor `5`. While `getTurn` still reported `running`,
+`trueforge:reconnect` printed `mode=subscribed`, reused the same session and turn IDs, resumed after
+cursor `5`, and advanced the checkpoint to `11`. The persisted chain contains one `exec` call,
+Daytona sandbox `v1:daytona:default.9b78c7ab-785f-4f21-aaf3-10605f08c37`, exit code `0`, output
+`reconnect-two-complete`, and one successful `turn.done`. No replacement session, turn, or tool call
+was created.
+
+### Real dynamic-subagent evidence
+
+Read-only session `01m127a61snekfgx13vzqf008k`, turn
+`01m127a62k9nemn1yxrrshxwdk.local` persisted three `thread.created` events within 87 milliseconds
+and three matching `thread.done { status: "done" }` events:
+
+- `public-impact`, thread `6cb11d58-f4ef-45ed-bad3-e2cfb0dd5718`, called only
+  `get_public_order_state`.
+- `stream-projection`, thread `5fc0be92-20bf-48d5-bed1-e202adf46a60`, called only
+  `inspect_projection_case`.
+- `runtime-provenance`, thread `4d5c9aef-b6d6-4056-9cc2-f1da8edb255b`, called only
+  `get_projection_runtime`.
+
+The persisted event log contains no `stage_projection_repair` or `apply_projection_repair` call.
+The run used the local Qwen fallback after Gemini quota exhaustion. Its runtime lookup returned
+`null`, and the parent later made an unnecessary failed system `list_tools` lookup for a nonexistent
+server; neither touched the write connector. This session proves genuine parallel TrueForge thread
+creation, isolation, MCP reads, joins, and persistence. It is not used as the authoritative
+diagnostic or repair proof.
 
 The event verifier can be rerun while the local TrueForge store is available:
 
@@ -162,8 +196,10 @@ The local artifact/CLI and PostgreSQL paths pass. Two real TrueForge attempts di
 - Pro session `01m0wdwe0mt1gtcwf7c3nwcbv4` failed before `sandbox.created` with Gemini HTTP 429;
   its free-tier request and input-token quotas were both reported as `0`.
 
-No exact-reducer Daytona success is claimed yet. See [EVIDENCE.md](EVIDENCE.md) for the pinned
-artifact digest, fixture hashes, launcher contract, and rerun command.
+The merge-commit run now passes the strict persisted-event verifier in real Daytona sandbox
+`v1:daytona:default.126a924-a948-467e-92ab-0ec4da122eed`. See
+[EVIDENCE.md](EVIDENCE.md) for the exact session, turn, commit, command contract, hashes, model
+fallback disclosure, and rerun command.
 
 ## Current security boundary
 

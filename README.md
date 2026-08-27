@@ -12,8 +12,10 @@ approved candidate is still safe to apply.
 The complete one-row workflow is implemented and merged: genuine gap reproduction, safe runtime
 attestation, reducer-derived evidence, immutable plan staging, native TrueForge denial and allow,
 transactional apply, append-only audit, and independent API/database verification. The local and
-CI gates pass; current external-provider evidence and operator-owned submission steps are tracked
-in [docs/SUBMISSION.md](docs/SUBMISSION.md).
+CI gates pass. Persisted TrueForge evidence now covers exact reducer execution in a real Daytona
+sandbox, parallel dynamic subagents, running-turn reconnect, and native denial/allow. Only the
+operator-owned video and official submission steps remain, as tracked in
+[docs/SUBMISSION.md](docs/SUBMISSION.md).
 
 ## Prerequisites
 
@@ -87,9 +89,9 @@ permanent-hole retirement policy, runtime refusal contract, startup command, and
 
 The evidence package implements RFC 8785 canonicalization, SHA-256 stream/row/runtime/candidate
 fingerprints, deterministic double replay, a self-derived repair envelope, and an exact reducer
-artifact runner. The PostgreSQL role-split path and local artifact known answers pass. TrueForge
-has created real Daytona sandboxes for the saved skill and exact-reducer attempts; the final exact
-reducer run remains separately evidence-gated and is never inferred from local execution.
+artifact runner. The PostgreSQL role-split path and local artifact known answers pass. The exact
+merge-commit reducer run also passes the strict persisted-event verifier in a real
+TrueForge-created Daytona sandbox; it is not inferred from local execution or model prose.
 
 See [docs/EVIDENCE.md](docs/EVIDENCE.md) for the trust boundary, known hashes, executable commands,
 and persisted TrueForge attempt status.
