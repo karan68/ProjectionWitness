@@ -3,14 +3,17 @@ import { z } from "zod";
 export const DaytonaNodeArchiveName = "node-v22.23.2-linux-x64.tar.gz";
 export const DaytonaNodeArchiveSha256 =
   "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a";
+export const DaytonaEvidenceScriptName = "daytona-reducer-evidence.sh";
+export const DaytonaEvidenceScriptSha256 =
+  "72f9f373abf992077763fa85089463dab495044669ff6870fd2ef7ace55d698b";
 
 const CommitShaSchema = z.string().regex(/^[0-9a-f]{40}$/);
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
 const TimeoutSecondsSchema = z.number().int().positive().max(180);
 
 export function buildBoundedNpmCiCommand(
-  aggregateTimeoutSeconds = 80,
-  attemptTimeoutSeconds = 35,
+  aggregateTimeoutSeconds = 75,
+  attemptTimeoutSeconds = 32,
   killAfterSeconds = 2,
 ): string {
   const aggregateTimeout = TimeoutSecondsSchema.parse(aggregateTimeoutSeconds);
@@ -29,32 +32,8 @@ export function buildTrueForgeDaytonaEvidenceCommand(
   const commitSha = CommitShaSchema.parse(commitShaInput);
   const reducerSha256 = Sha256Schema.parse(reducerSha256Input);
   return `set -euo pipefail
-work=/tmp/projection-witness-evidence
-rm -rf "$work"
-mkdir -p "$work"
-cd "$work"
-timeout 15s curl --fail --show-error --location --retry 5 --retry-all-errors --connect-timeout 8 --max-time 8 --retry-max-time 13 \
-  --output ${DaytonaNodeArchiveName} \
-  https://nodejs.org/dist/v22.23.2/${DaytonaNodeArchiveName}
-printf '%s  %s\n' '${DaytonaNodeArchiveSha256}' '${DaytonaNodeArchiveName}' | sha256sum -c -
-tar -xzf ${DaytonaNodeArchiveName}
-export PATH="$work/node-v22.23.2-linux-x64/bin:$PATH"
-test "$(node --version)" = 'v22.23.2'
-printf '%s\n' 'stage=node-bootstrap-ok'
-timeout 15s npm install --global npm@10.9.9 --no-audit --no-fund
-test "$(npm --version)" = '10.9.9'
-printf '%s\n' 'stage=npm-bootstrap-ok'
-timeout 15s curl --fail --show-error --location --retry 5 --retry-all-errors --connect-timeout 8 --max-time 8 --retry-max-time 13 \
-  --output source.tar.gz \
-  'https://codeload.github.com/karan68/ProjectionWitness/tar.gz/${commitSha}'
-tar -xzf source.tar.gz
-cd 'ProjectionWitness-${commitSha}'
-${buildBoundedNpmCiCommand()}
-printf '%s\n' 'stage=repository-install-ok'
-timeout 10s npm run --silent build:reducer
-artifact_path='artifacts/order-reducer.${reducerSha256}.cjs'
-actual_digest="$(sha256sum "$artifact_path" | cut -d' ' -f1)"
-test "$actual_digest" = '${reducerSha256}'
-printf '%s\n' 'stage=reducer-digest-ok'
-timeout 5s npm run --silent evidence:run-reducer -- "$artifact_path" tests/fixtures/reducer-evidence-input.json`;
+script=/tmp/${DaytonaEvidenceScriptName}
+timeout --kill-after=2s 12s curl --fail --show-error --location --retry 5 --retry-all-errors --connect-timeout 6 --max-time 6 --retry-max-time 10 --output "$script" 'https://raw.githubusercontent.com/karan68/ProjectionWitness/${commitSha}/scripts/${DaytonaEvidenceScriptName}'
+printf '%s  %s\n' '${DaytonaEvidenceScriptSha256}' "$script" | sha256sum -c -
+sh "$script" '${commitSha}' '${reducerSha256}'`;
 }

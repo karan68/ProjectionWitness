@@ -5,10 +5,13 @@ import {
 import {
   buildBoundedNpmCiCommand,
   buildTrueForgeDaytonaEvidenceCommand,
+  DaytonaEvidenceScriptName,
+  DaytonaEvidenceScriptSha256,
   DaytonaNodeArchiveName,
   DaytonaNodeArchiveSha256,
 } from "../../scripts/lib/trueforge-daytona-command.js";
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -92,29 +95,33 @@ function persistedEvents(overrides?: {
 }
 
 describe("TrueForge reducer evidence verification", () => {
-  it("binds the official tar.gz archive to its matching SHA-256", () => {
+  it("binds a compact exact-commit script to its SHA-256", async () => {
     const built = buildTrueForgeDaytonaEvidenceCommand("d".repeat(40), "e".repeat(64));
+    const evidenceScriptBytes = await readFile(
+      new URL("../../scripts/daytona-reducer-evidence.sh", import.meta.url),
+    );
+    const evidenceScript = evidenceScriptBytes.toString("utf8");
+    expect(createHash("sha256").update(evidenceScriptBytes).digest("hex")).toBe(
+      DaytonaEvidenceScriptSha256,
+    );
+    expect(built.length).toBeLessThan(1_000);
+    expect(built).toContain(DaytonaEvidenceScriptSha256);
+    expect(built).toContain(`/scripts/${DaytonaEvidenceScriptName}`);
+    expect(built).toContain("d".repeat(40));
+    expect(built).toContain("e".repeat(64));
+    expect(built).not.toContain("npm ci");
     expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
     expect(DaytonaNodeArchiveSha256).toBe(
       "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
     );
-    expect(built).toContain(`${DaytonaNodeArchiveSha256}' '${DaytonaNodeArchiveName}`);
-    expect(built).toContain(`tar -xzf ${DaytonaNodeArchiveName}`);
-    expect(built).toContain(
-      "timeout --kill-after=2s 80s sh -c 'for attempt in 1 2; do timeout --kill-after=2s 35s npm ci",
+    expect(evidenceScript).toContain(DaytonaNodeArchiveSha256);
+    expect(evidenceScript).toContain(DaytonaNodeArchiveName);
+    expect(evidenceScript).toContain(buildBoundedNpmCiCommand());
+    expect(evidenceScript).toContain(
+      "https://codeload.github.com/karan68/ProjectionWitness/tar.gz/",
     );
-    expect(built).toContain("npm ci --include=dev --no-audit --no-fund --loglevel warn");
-    expect(built).toContain("--fetch-retries 2");
-    expect(built).toContain("rm -rf node_modules; done; exit 1'");
-    expect(
-      built.match(/timeout 15s curl .*--connect-timeout 8 --max-time 8 --retry-max-time 13/g),
-    ).toHaveLength(2);
-    expect(built).toContain("timeout 15s npm install --global npm@10.9.9");
-    expect(built).toContain("timeout 10s npm run --silent build:reducer");
-    expect(built).toContain("timeout 5s npm run --silent evidence:run-reducer");
-    expect(built).toContain("https://codeload.github.com/karan68/ProjectionWitness/tar.gz/");
-    expect(built).toContain("stage=node-bootstrap-ok");
-    expect(built).toContain("stage=reducer-digest-ok");
+    expect(evidenceScript).toContain("stage=node-bootstrap-ok");
+    expect(evidenceScript).toContain("stage=reducer-digest-ok");
   });
 
   it("times out a stalled install and executes the second attempt", async () => {
