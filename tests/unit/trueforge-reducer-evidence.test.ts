@@ -2,6 +2,11 @@ import {
   collectPersistedSessionEvents,
   verifyTrueForgeReducerEvidence,
 } from "../../scripts/lib/verify-trueforge-reducer-evidence.js";
+import {
+  buildTrueForgeDaytonaEvidenceCommand,
+  DaytonaNodeArchiveName,
+  DaytonaNodeArchiveSha256,
+} from "../../scripts/lib/trueforge-daytona-command.js";
 import { describe, expect, it } from "vitest";
 
 const command = "printf exact-command";
@@ -79,6 +84,26 @@ function persistedEvents(overrides?: {
 }
 
 describe("TrueForge reducer evidence verification", () => {
+  it("binds the official tar.gz archive to its matching SHA-256", () => {
+    const built = buildTrueForgeDaytonaEvidenceCommand("d".repeat(40), "e".repeat(64));
+    expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
+    expect(DaytonaNodeArchiveSha256).toBe(
+      "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
+    );
+    expect(built).toContain(`${DaytonaNodeArchiveSha256}' '${DaytonaNodeArchiveName}`);
+    expect(built).toContain(`tar -xzf ${DaytonaNodeArchiveName}`);
+    expect(built).toContain("timeout 55s npm ci --include=dev --no-audit --no-fund --silent");
+    expect(
+      built.match(/timeout 20s curl .*--connect-timeout 10 --max-time 10 --retry-max-time 18/g),
+    ).toHaveLength(2);
+    expect(built).toContain("timeout 25s npm install --global npm@10.9.9");
+    expect(built).toContain("timeout 15s npm run --silent build:reducer");
+    expect(built).toContain("timeout 10s npm run --silent evidence:run-reducer");
+    expect(built).toContain("https://codeload.github.com/karan68/ProjectionWitness/tar.gz/");
+    expect(built).toContain("stage=node-bootstrap-ok");
+    expect(built).toContain("stage=reducer-digest-ok");
+  });
+
   it("accepts one exact successful exec result", () => {
     expect(verifyTrueForgeReducerEvidence(persistedEvents(), expected)).toEqual(result);
   });

@@ -12,9 +12,10 @@ The current implementation owns one narrow order event-store contract:
 - One PostgreSQL event store with expected-version appends.
 - Immutable event rows enforced by privileges and a defensive trigger.
 
-It does not yet include the Order API, projection tables, projector, out-of-order commit
-reproducer, evidence fingerprints, repair plan, MCP server, or repair transaction. Those remain
-separate reviewed pull requests.
+The event store remains a narrow package boundary. The repository now also contains the reviewed
+Order API, projection tables, both projector algorithms, genuine out-of-order reproducer,
+evidence fingerprints, repair plan/transaction, and MCP connectors; those layers consume this
+contract without adding general SQL or event-mutation APIs here.
 
 ## Append Transaction
 
@@ -49,9 +50,9 @@ records the SHA-256 of every applied filename in `schema_migrations`; a changed 
 hard error rather than an implicit rewrite.
 
 Runtime login credentials are not created by migration SQL. The local/demo bootstrap must grant
-passwords separately from the four secret runtime URLs with `npm run db:bootstrap-roles`. The
+passwords separately from the five secret runtime URLs with `npm run db:bootstrap-roles`. The
 migration-owner connection is never a runtime API connection. Integration tests authenticate
-directly as all four runtime identities; event-store behavior runs through `pw_api`, not an
+directly as all five runtime identities; event-store behavior runs through `pw_api`, not an
 impersonated migrator session.
 
 ## Verification

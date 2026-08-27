@@ -54,16 +54,13 @@ const projectorUrl = environmentVariable("DATABASE_URL_PROJECTOR") ?? "";
 const mcpReadUrl = environmentVariable("DATABASE_URL_MCP_READ") ?? "";
 const mcpWriteUrl = environmentVariable("DATABASE_URL_MCP_WRITE") ?? "";
 const repairExecutorUrl = environmentVariable("DATABASE_URL_REPAIR_EXECUTOR") ?? "";
-const describeWithDatabase = [
-  migratorUrl,
-  apiUrl,
-  projectorUrl,
-  mcpReadUrl,
-  mcpWriteUrl,
-  repairExecutorUrl,
-].some((value) => value === "")
-  ? describe.skip
-  : describe;
+if (
+  [migratorUrl, apiUrl, projectorUrl, mcpReadUrl, mcpWriteUrl, repairExecutorUrl].some(
+    (value) => value === "",
+  )
+) {
+  throw new Error("Projection repair tests require every runtime database URL");
+}
 
 interface RepairCase {
   envelope: RepairEnvelope;
@@ -72,7 +69,7 @@ interface RepairCase {
   streamId: string;
 }
 
-describeWithDatabase("transactional projection repair", () => {
+describe("transactional projection repair", () => {
   let migratorPool: Pool;
   let apiPool: Pool;
   let projectorPool: Pool;

@@ -28,10 +28,9 @@ const migratorUrl = environmentVariable("DATABASE_URL_MIGRATOR") ?? "";
 const apiUrl = environmentVariable("DATABASE_URL_API") ?? "";
 const projectorUrl = environmentVariable("DATABASE_URL_PROJECTOR") ?? "";
 const mcpReadUrl = environmentVariable("DATABASE_URL_MCP_READ") ?? "";
-const describeWithDatabase =
-  migratorUrl === "" || apiUrl === "" || projectorUrl === "" || mcpReadUrl === ""
-    ? describe.skip
-    : describe;
+if (migratorUrl === "" || apiUrl === "" || projectorUrl === "" || mcpReadUrl === "") {
+  throw new Error("PostgreSQL evidence tests require migrator, API, projector, and read URLs");
+}
 
 interface ProjectionEvidenceRow {
   order_id: string;
@@ -43,7 +42,7 @@ interface ProjectionEvidenceRow {
   row_version: string;
 }
 
-describeWithDatabase("PostgreSQL canonical evidence snapshots", () => {
+describe("PostgreSQL canonical evidence snapshots", () => {
   let migratorPool: Pool;
   let apiPool: Pool;
   let projectorPool: Pool;

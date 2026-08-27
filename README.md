@@ -9,8 +9,11 @@ approved candidate is still safe to apply.
 
 ## Current status
 
-Foundation work is in progress. No repair workflow is claimed as implemented until the executable
-gates in [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) pass.
+The complete one-row workflow is implemented and merged: genuine gap reproduction, safe runtime
+attestation, reducer-derived evidence, immutable plan staging, native TrueForge denial and allow,
+transactional apply, append-only audit, and independent API/database verification. The local and
+CI gates pass; current external-provider evidence and operator-owned submission steps are tracked
+in [docs/SUBMISSION.md](docs/SUBMISSION.md).
 
 ## Prerequisites
 
@@ -26,11 +29,17 @@ gates in [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) pass.
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:down
 ```
 
-Set `DATABASE_URL_MIGRATOR` to the local migration-owner connection before applying ordered
-migrations:
+Set the migration owner and all five least-privilege runtime identities before applying migrations
+and provisioning login passwords. The example passwords are local-only placeholders and must
+match the values used to create the disposable database:
 
 ```powershell
 $env:DATABASE_URL_MIGRATOR = "postgresql://pw_migrator:<local-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_API = "postgresql://pw_api:<local-api-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_PROJECTOR = "postgresql://pw_projector:<local-projector-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_MCP_READ = "postgresql://pw_mcp_read:<local-read-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_MCP_WRITE = "postgresql://pw_mcp_write:<local-stage-password>@127.0.0.1:55432/projection_witness"
+$env:DATABASE_URL_REPAIR_EXECUTOR = "postgresql://pw_repair_executor:<local-executor-password>@127.0.0.1:55432/projection_witness"
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:migrate
 & "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:bootstrap-roles
 ```
@@ -78,9 +87,9 @@ permanent-hole retirement policy, runtime refusal contract, startup command, and
 
 The evidence package implements RFC 8785 canonicalization, SHA-256 stream/row/runtime/candidate
 fingerprints, deterministic double replay, a self-derived repair envelope, and an exact reducer
-artifact runner. The PostgreSQL role-split path and local artifact known answers pass. The real
-exact-reducer Daytona run is currently blocked before sandbox creation by model quota and is not
-claimed as complete.
+artifact runner. The PostgreSQL role-split path and local artifact known answers pass. TrueForge
+has created real Daytona sandboxes for the saved skill and exact-reducer attempts; the final exact
+reducer run remains separately evidence-gated and is never inferred from local execution.
 
 See [docs/EVIDENCE.md](docs/EVIDENCE.md) for the trust boundary, known hashes, executable commands,
 and persisted TrueForge attempt status.
@@ -104,8 +113,8 @@ The write-facing database credential can stage immutable plans but cannot mutate
 apply runs through the internal executor identity.
 
 See [docs/MCP_CONNECTORS.md](docs/MCP_CONNECTORS.md) for the exact tool surfaces, database roles,
-limits, startup command, and official-client smoke test. Native TrueForge approval wiring remains
-follow-up work. The checked-in TrueForge manifest, projection repair sandbox skill, idempotent
+limits, startup command, and official-client smoke test. The checked-in TrueForge manifest,
+projection repair sandbox skill, idempotent
 registration client, approval-event verifier, and sequence-based reconnect client are documented
 in [docs/TRUEFORGE.md](docs/TRUEFORGE.md); deterministic contract tests, real registration, a
 read-tool turn, completed-turn reconnect, native denial, and native allow now pass at exact public
@@ -120,6 +129,29 @@ independent verifier agree that the database and public API are `PAID`.
 
 See [docs/DEMO.md](docs/DEMO.md) for commands, hashes, persisted TrueForge IDs, zero-mutation denial
 evidence, native allow, audit receipt, and post-write verification.
+
+## End-to-end local run
+
+Keep PostgreSQL running, then start the public API and both MCP connectors in separate terminals:
+
+```powershell
+$env:POSTGRES_PORT = "55432"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run db:serve
+
+$env:API_PORT = "3000"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run dev:api
+
+$env:API_BASE_URL = "http://127.0.0.1:3000"
+$env:REDUCER_BUNDLE_PATH = ".\artifacts\order-reducer.4decce13b48e3aeff9402b36c13bf2a995b176f2c7e11e203c83d03b8b23e637.cjs"
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run build:reducer
+& "C:\dev\.tools\node-v22.23.2-win-x64\npm.cmd" run dev:mcp
+```
+
+Run TrueForge `0.1.4` on WSL loopback using the launch command in
+[docs/TRUEFORGE.md](docs/TRUEFORGE.md). Register the exact public commit after setting
+`TRUEFORGE_MCP_READ_URL` and `TRUEFORGE_MCP_WRITE_URL`, then follow the guarded reset,
+reproduction, preparation, approval, and verification commands in [docs/DEMO.md](docs/DEMO.md).
+TrueForge local mode has no authentication and must remain on localhost.
 
 On this host, native WSL PostgreSQL already owns port `5432`, and WSL stops detached services when
 its last Windows handle closes. Use the tested override and keep the foreground database terminal
@@ -149,9 +181,12 @@ The reset command refuses `NODE_ENV=production` and requires the exact confirmat
 - No write when stream, runtime, row, candidate, plan, or expiry evidence is stale.
 
 See [SOURCE_OF_TRUTH.md](SOURCE_OF_TRUTH.md) for the complete contract and
+[docs/SECURITY.md](docs/SECURITY.md) for trust boundaries and residual risk,
 [docs/VERSIONS.md](docs/VERSIONS.md) for verified pins,
 [docs/TRUEFORGE.md](docs/TRUEFORGE.md) for the tested harness path, and
-[docs/QODO_EVIDENCE.md](docs/QODO_EVIDENCE.md) for review history.
+[docs/QODO_EVIDENCE.md](docs/QODO_EVIDENCE.md) for review history. Submission narration and
+operator steps are in [docs/SUBMISSION.md](docs/SUBMISSION.md); AI assistance and human
+verification are disclosed in [docs/AI_DISCLOSURE.md](docs/AI_DISCLOSURE.md).
 
 ## License
 

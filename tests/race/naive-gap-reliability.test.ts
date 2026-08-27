@@ -9,9 +9,11 @@ function environmentVariable(name: string): string | undefined {
 }
 
 const databaseUrl = environmentVariable("DATABASE_URL_MIGRATOR") ?? "";
-const describeWithDatabase = databaseUrl === "" ? describe.skip : describe;
+if (databaseUrl === "") {
+  throw new Error("Naive gap reliability tests require DATABASE_URL_MIGRATOR");
+}
 
-describeWithDatabase("naive gap reliability", () => {
+describe("naive gap reliability", () => {
   let pool: Pool;
 
   beforeAll(async () => {

@@ -26,7 +26,9 @@ const runtimeUrls: RuntimeRoleUrls = {
   pw_repair_executor: environmentVariable("DATABASE_URL_REPAIR_EXECUTOR") ?? "",
 };
 const databaseUrls = [databaseUrl, ...Object.values(runtimeUrls)];
-const describeWithDatabase = databaseUrls.some((url) => url === "") ? describe.skip : describe;
+if (databaseUrls.some((url) => url === "")) {
+  throw new Error("PostgreSQL event-store tests require every runtime database URL");
+}
 
 function postgresErrorCode(error: unknown): string | undefined {
   if (typeof error !== "object" || error === null || !("code" in error)) {
@@ -46,7 +48,7 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
   return { promise, resolve: resolvePromise };
 }
 
-describeWithDatabase("PostgreSQL order event store", () => {
+describe("PostgreSQL order event store", () => {
   let migratorPool: Pool;
   let apiPool: Pool;
   let eventStore: OrderEventStore;
