@@ -92,13 +92,16 @@ describe("TrueForge reducer evidence verification", () => {
     );
     expect(built).toContain(`${DaytonaNodeArchiveSha256}' '${DaytonaNodeArchiveName}`);
     expect(built).toContain(`tar -xzf ${DaytonaNodeArchiveName}`);
-    expect(built).toContain("timeout 55s npm ci --include=dev --no-audit --no-fund --silent");
+    expect(built).toContain("timeout 80s sh -c 'for attempt in 1 2");
+    expect(built).toContain("npm ci --include=dev --no-audit --no-fund --loglevel warn");
+    expect(built).toContain("--fetch-retries 2");
+    expect(built).toContain("rm -rf node_modules; done; exit 1'");
     expect(
-      built.match(/timeout 20s curl .*--connect-timeout 10 --max-time 10 --retry-max-time 18/g),
+      built.match(/timeout 15s curl .*--connect-timeout 8 --max-time 8 --retry-max-time 13/g),
     ).toHaveLength(2);
-    expect(built).toContain("timeout 25s npm install --global npm@10.9.9");
-    expect(built).toContain("timeout 15s npm run --silent build:reducer");
-    expect(built).toContain("timeout 10s npm run --silent evidence:run-reducer");
+    expect(built).toContain("timeout 15s npm install --global npm@10.9.9");
+    expect(built).toContain("timeout 10s npm run --silent build:reducer");
+    expect(built).toContain("timeout 5s npm run --silent evidence:run-reducer");
     expect(built).toContain("https://codeload.github.com/karan68/ProjectionWitness/tar.gz/");
     expect(built).toContain("stage=node-bootstrap-ok");
     expect(built).toContain("stage=reducer-digest-ok");
