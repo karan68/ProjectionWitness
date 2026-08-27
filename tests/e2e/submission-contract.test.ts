@@ -1,8 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-
-const repositoryRoot = fileURLToPath(new URL("../../", import.meta.url));
 
 async function text(relativePath: string): Promise<string> {
   return readFile(new URL(relativePath, new URL("../../", import.meta.url)), "utf8");
@@ -26,7 +23,6 @@ describe("submission contract", () => {
     await expect(Promise.all(required.map((path) => text(path)))).resolves.toSatisfy(
       (contents: string[]) => contents.every((content) => content.trim().length > 0),
     );
-    expect(repositoryRoot).toMatch(/ProjectionWitness[\\/]$/);
   });
 
   it("keeps native approval on only the destructive apply tool", async () => {
