@@ -42,6 +42,7 @@
     "trueforge:reconnect": "tsx scripts/reconnect-agent-turn.ts",
     "trueforge:register": "tsx scripts/register-agent.ts",
     "trueforge:run": "tsx scripts/run-agent-turn.ts",
+    "trueforge:verify-daytona": "tsx scripts/verify-trueforge-daytona-session.ts",
     "trueforge:verify-approved-repair": "tsx scripts/verify-trueforge-approved-repair.ts",
     "trueforge:verify-read-smoke": "tsx scripts/verify-trueforge-read-smoke.ts",
     "format": "biome format --write .",
