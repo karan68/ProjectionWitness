@@ -3,6 +3,7 @@ import {
   verifyTrueForgeReducerEvidence,
 } from "../../scripts/lib/verify-trueforge-reducer-evidence.js";
 import {
+  buildBoundedEvidenceScriptExecutionCommand,
   buildBoundedNpmCiCommand,
   buildTrueForgeDaytonaEvidenceCommand,
   DaytonaEvidenceScriptName,
@@ -10,8 +11,8 @@ import {
   DaytonaNodeArchiveName,
   DaytonaNodeArchiveSha256,
 } from "../../scripts/lib/trueforge-daytona-command.js";
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
+import { execFile, type ExecFileException } from "node:child_process";
+import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { delimiter, join } from "node:path";
@@ -112,8 +113,10 @@ describe("TrueForge reducer evidence verification", () => {
     expect(built).toContain("e".repeat(64));
     expect(built).not.toContain("npm ci");
     expect(built).not.toContain("\n");
-    expect(built).toContain('timeout --kill-after=5s 155s sh "$script"');
-    expect(built).toContain('rm -rf "$work" "$script"; exit "$status"');
+    expect(built).toContain("timeout --kill-after=5s 155s sh '/tmp/daytona-reducer-evidence.sh'");
+    expect(built).toContain(
+      "rm -rf '/tmp/projection-witness-evidence' '/tmp/daytona-reducer-evidence.sh'",
+    );
     expect(DaytonaNodeArchiveName).toBe("node-v22.23.2-linux-x64.tar.gz");
     expect(DaytonaNodeArchiveSha256).toBe(
       "b294a556e639d64338823920e5866c21c02741742d2e1529ee1a225c1ec9252a",
@@ -167,6 +170,41 @@ test "$count" -eq 2
     } finally {
       await rm(temporaryDirectory, { recursive: true, force: true });
     }
+  });
+
+  it("force-stops a stalled evidence script, cleans paths, and propagates failure", async () => {
+    const suffix = randomUUID();
+    const scriptPath = `/tmp/projection-witness-outer-${suffix}.sh`;
+    const workPath = `/tmp/projection-witness-outer-${suffix}`;
+    const shellPath = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\sh.exe" : "sh";
+    await execFileAsync(shellPath, [
+      "-c",
+      `printf '%s\n' '#!/bin/sh' "trap '' TERM" 'while :; do :; done' > '${scriptPath}'; mkdir -p '${workPath}'`,
+    ]);
+
+    const startedAt = Date.now();
+    let executionError: ExecFileException | undefined;
+    try {
+      await execFileAsync(shellPath, [
+        "-c",
+        buildBoundedEvidenceScriptExecutionCommand("d".repeat(40), "e".repeat(64), {
+          aggregateTimeoutSeconds: 2,
+          killAfterSeconds: 1,
+          scriptPath,
+          workPath,
+        }),
+      ]);
+    } catch (error) {
+      executionError = error as ExecFileException;
+    }
+
+    expect(executionError?.code).not.toBe(0);
+    expect(Date.now() - startedAt).toBeLessThan(6_000);
+    const cleanup = await execFileAsync(shellPath, [
+      "-c",
+      `test ! -e '${scriptPath}' && test ! -e '${workPath}' && printf cleaned`,
+    ]);
+    expect(cleanup.stdout).toBe("cleaned");
   });
 
   it("accepts one exact successful exec result", () => {
