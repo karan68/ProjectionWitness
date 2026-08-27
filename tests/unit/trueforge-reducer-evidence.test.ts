@@ -1,5 +1,7 @@
 import {
   collectPersistedSessionEvents,
+  collectPersistedSessionEventsWithinDeadline,
+  parseLoopbackTrueForgeBaseUrl,
   verifyTrueForgeReducerEvidence,
 } from "../../scripts/lib/verify-trueforge-reducer-evidence.js";
 import {
@@ -96,6 +98,34 @@ function persistedEvents(overrides?: {
 }
 
 describe("TrueForge reducer evidence verification", () => {
+  it("accepts only credential-free loopback TrueForge origins", () => {
+    expect(parseLoopbackTrueForgeBaseUrl("http://localhost:8790/")).toBe("http://localhost:8790");
+    expect(parseLoopbackTrueForgeBaseUrl("https://[::1]:8790")).toBe("https://[::1]:8790");
+    for (const invalid of [
+      "file:///tmp/trueforge",
+      "http://example.com:8790",
+      "http://user:password@127.0.0.1:8790",
+      "http://127.0.0.1:8790/api/v1",
+      "http://127.0.0.1:8790?redirect=example.com",
+    ]) {
+      expect(() => parseLoopbackTrueForgeBaseUrl(invalid)).toThrow();
+    }
+  });
+
+  it("aborts stalled persisted-event iteration at one aggregate deadline", async () => {
+    await expect(
+      collectPersistedSessionEventsWithinDeadline(async (signal) => {
+        async function* stalledEvents() {
+          await new Promise<void>((_resolve, reject) => {
+            signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+          });
+          yield { event: { type: "unreachable" } };
+        }
+        return stalledEvents();
+      }, 20),
+    ).rejects.toThrow(/aggregate deadline/);
+  });
+
   it("binds a compact exact-commit script to its SHA-256", async () => {
     const built = buildTrueForgeDaytonaEvidenceCommand("d".repeat(40), "e".repeat(64));
     const evidenceScriptBytes = await readFile(

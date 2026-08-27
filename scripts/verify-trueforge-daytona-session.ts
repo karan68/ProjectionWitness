@@ -2,7 +2,8 @@ import { TrueForge } from "@truefoundry/trueforge-sdk";
 import { z } from "zod";
 import { buildTrueForgeDaytonaEvidenceCommand } from "./lib/trueforge-daytona-command.js";
 import {
-  collectPersistedSessionEvents,
+  collectPersistedSessionEventsWithinDeadline,
+  parseLoopbackTrueForgeBaseUrl,
   verifyTrueForgeReducerEvidence,
 } from "./lib/verify-trueforge-reducer-evidence.js";
 
@@ -15,10 +16,10 @@ const commitSha = CommitShaSchema.parse(process.argv[3]);
 const reducerSha256 = Sha256Schema.parse(process.argv[4]);
 const { TRUEFORGE_BASE_URL: baseUrl = "http://127.0.0.1:8790" } = process.env;
 const client = new TrueForge({
-  baseUrl,
+  baseUrl: parseLoopbackTrueForgeBaseUrl(baseUrl),
 });
-const persistedEvents = await collectPersistedSessionEvents(
-  await client.sessions.listEvents(sessionId),
+const persistedEvents = await collectPersistedSessionEventsWithinDeadline(async (signal) =>
+  client.sessions.listEvents(sessionId, {}, { abortSignal: signal, timeoutInSeconds: 30 }),
 );
 const result = verifyTrueForgeReducerEvidence(persistedEvents, {
   command: buildTrueForgeDaytonaEvidenceCommand(commitSha, reducerSha256),
