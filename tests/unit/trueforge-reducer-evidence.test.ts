@@ -3,11 +3,19 @@ import {
   verifyTrueForgeReducerEvidence,
 } from "../../scripts/lib/verify-trueforge-reducer-evidence.js";
 import {
+  buildBoundedNpmCiCommand,
   buildTrueForgeDaytonaEvidenceCommand,
   DaytonaNodeArchiveName,
   DaytonaNodeArchiveSha256,
 } from "../../scripts/lib/trueforge-daytona-command.js";
+import { execFile } from "node:child_process";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
+
+const execFileAsync = promisify(execFile);
 
 const command = "printf exact-command";
 const result = {
@@ -92,7 +100,7 @@ describe("TrueForge reducer evidence verification", () => {
     );
     expect(built).toContain(`${DaytonaNodeArchiveSha256}' '${DaytonaNodeArchiveName}`);
     expect(built).toContain(`tar -xzf ${DaytonaNodeArchiveName}`);
-    expect(built).toContain("timeout 80s sh -c 'for attempt in 1 2");
+    expect(built).toContain("timeout 80s sh -c 'for attempt in 1 2; do timeout 35s npm ci");
     expect(built).toContain("npm ci --include=dev --no-audit --no-fund --loglevel warn");
     expect(built).toContain("--fetch-retries 2");
     expect(built).toContain("rm -rf node_modules; done; exit 1'");
@@ -105,6 +113,43 @@ describe("TrueForge reducer evidence verification", () => {
     expect(built).toContain("https://codeload.github.com/karan68/ProjectionWitness/tar.gz/");
     expect(built).toContain("stage=node-bootstrap-ok");
     expect(built).toContain("stage=reducer-digest-ok");
+  });
+
+  it("times out a stalled install and executes the second attempt", async () => {
+    const temporaryDirectory = await mkdtemp(join(tmpdir(), "projection-witness-npm-retry-"));
+    const binaryDirectory = join(temporaryDirectory, "bin");
+    const countPath = join(temporaryDirectory, "attempt-count");
+    const npmPath = join(binaryDirectory, "npm");
+    const shellPath = process.platform === "win32" ? "C:\\Program Files\\Git\\bin\\sh.exe" : "sh";
+    await mkdir(binaryDirectory);
+    await writeFile(
+      npmPath,
+      `#!/bin/sh
+count=0
+test ! -f "$PW_RETRY_COUNT_FILE" || count="$(cat "$PW_RETRY_COUNT_FILE")"
+count=$((count + 1))
+printf '%s' "$count" > "$PW_RETRY_COUNT_FILE"
+test "$count" -ne 1 || sleep 2
+test "$count" -eq 2
+`,
+    );
+    await chmod(npmPath, 0o755);
+
+    try {
+      const startedAt = Date.now();
+      await execFileAsync(shellPath, ["-c", buildBoundedNpmCiCommand(5, 1)], {
+        cwd: temporaryDirectory,
+        env: {
+          ...process.env,
+          PATH: `${binaryDirectory}${delimiter}${process.env.PATH ?? ""}`,
+          PW_RETRY_COUNT_FILE: countPath,
+        },
+      });
+      expect(await readFile(countPath, "utf8")).toBe("2");
+      expect(Date.now() - startedAt).toBeLessThan(5_000);
+    } finally {
+      await rm(temporaryDirectory, { recursive: true, force: true });
+    }
   });
 
   it("accepts one exact successful exec result", () => {

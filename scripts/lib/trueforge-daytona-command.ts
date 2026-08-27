@@ -6,6 +6,19 @@ export const DaytonaNodeArchiveSha256 =
 
 const CommitShaSchema = z.string().regex(/^[0-9a-f]{40}$/);
 const Sha256Schema = z.string().regex(/^[0-9a-f]{64}$/);
+const TimeoutSecondsSchema = z.number().int().positive().max(180);
+
+export function buildBoundedNpmCiCommand(
+  aggregateTimeoutSeconds = 80,
+  attemptTimeoutSeconds = 35,
+): string {
+  const aggregateTimeout = TimeoutSecondsSchema.parse(aggregateTimeoutSeconds);
+  const attemptTimeout = TimeoutSecondsSchema.parse(attemptTimeoutSeconds);
+  if (attemptTimeout * 2 >= aggregateTimeout) {
+    throw new Error("Aggregate npm timeout must leave time for two attempts and cleanup");
+  }
+  return `timeout ${aggregateTimeout}s sh -c 'for attempt in 1 2; do timeout ${attemptTimeout}s npm ci --include=dev --no-audit --no-fund --loglevel warn --fetch-retries 2 --fetch-retry-mintimeout 1000 --fetch-retry-maxtimeout 5000 --fetch-timeout 20000 && exit 0; rm -rf node_modules; done; exit 1'`;
+}
 
 export function buildTrueForgeDaytonaEvidenceCommand(
   commitShaInput: string,
@@ -34,7 +47,7 @@ timeout 15s curl --fail --show-error --location --retry 5 --retry-all-errors --c
   'https://codeload.github.com/karan68/ProjectionWitness/tar.gz/${commitSha}'
 tar -xzf source.tar.gz
 cd 'ProjectionWitness-${commitSha}'
-timeout 80s sh -c 'for attempt in 1 2; do npm ci --include=dev --no-audit --no-fund --loglevel warn --fetch-retries 2 --fetch-retry-mintimeout 1000 --fetch-retry-maxtimeout 5000 --fetch-timeout 20000 && exit 0; rm -rf node_modules; done; exit 1'
+${buildBoundedNpmCiCommand()}
 printf '%s\n' 'stage=repository-install-ok'
 timeout 10s npm run --silent build:reducer
 artifact_path='artifacts/order-reducer.${reducerSha256}.cjs'
